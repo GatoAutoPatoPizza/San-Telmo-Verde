@@ -1,0 +1,68 @@
+========================================
+SAN TELMO VERDE — IMPORTAR SQL + GOOGLE
+========================================
+
+1) IMPORTAR EL SQL (phpMyAdmin — XAMPP/WAMP/MAMP)
+-------------------------------------------------
+a. Abrí http://localhost/phpmyadmin
+b. Click en "Importar" (arriba)
+c. "Elegir archivo" → codigo_BD.sql
+d. Click "Continuar" / "Importar"
+e. Deberías ver la base "san_telmo_verde" con las tablas:
+   propuestas, usuarios, votos_propuesta, fichas_mapa
+
+Por línea de comandos (si tenés mysql en PATH):
+  mysql -u root -p < codigo_BD.sql
+
+Si tu root tiene contraseña, ponela en server.js:
+  password: 'tu_clave',
+
+
+2) GOOGLE LOGIN REAL (obligatorio para tu cuenta)
+-------------------------------------------------
+El login demo (nombre random) YA NO EXISTE.
+Necesitás un Client ID de Google:
+
+a. Entrá a https://console.cloud.google.com/
+b. Creá un proyecto (o elegí uno)
+c. Menú → APIs y servicios → Pantalla de consentimiento de OAuth
+   - Tipo: Externo
+   - Completá nombre de app, email de soporte
+   - Guardá y continuá (podés dejar scopes básicos)
+   - En "Usuarios de prueba" agregá TU Gmail si la app está en Testing
+d. APIs y servicios → Credenciales → + Crear credenciales
+   → ID de cliente de OAuth
+   - Tipo: Aplicación web
+   - Nombre: San Telmo Verde
+   - Orígenes de JavaScript autorizados (IMPORTANTE):
+       http://localhost:3000
+       http://127.0.0.1:3000
+   - NO hace falta URI de redirección si usás el modo popup de GIS
+e. Copiá el "ID de cliente" (termina en .apps.googleusercontent.com)
+
+f. Pegalo en DOS lugares:
+   - index.html  →  data-client_id="TU_ID.apps.googleusercontent.com"
+   - script.js   →  const GOOGLE_CLIENT_ID = 'TU_ID.apps.googleusercontent.com';
+
+g. Opcional (verificación en servidor):
+   set GOOGLE_CLIENT_ID=TU_ID.apps.googleusercontent.com
+   (Windows PowerShell: $env:GOOGLE_CLIENT_ID="TU_ID...")
+
+
+3) CORRER LA PÁGINA (NO abrir el HTML con doble clic)
+-----------------------------------------------------
+Google NO funciona con file://...
+Tenés que servir por http://localhost:
+
+  cd carpeta-del-proyecto
+  npm install
+  npm start
+
+Abrí en el navegador:  http://localhost:3000
+
+4) PROBAR LOGIN
+---------------
+Ingresar → botón oficial de Google → elegí tu cuenta
+Deberías ver TU nombre y foto en la barra de navegación.
+
+

@@ -1,0 +1,19 @@
+{
+  "name": "san-telmo-verde",
+  "version": "1.0.0",
+  "description": "Plataforma ciudadana San Telmo Verde",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "express": "^4.22.2",
+    "google-auth-library": "^9.14.0",
+    "mysql": "^2.18.1",
+    "mysql2": "^3.11.0"
+  }
+}

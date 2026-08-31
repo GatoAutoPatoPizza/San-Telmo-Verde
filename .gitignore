@@ -1,0 +1,18 @@
+# Dependencias
+node_modules/
+
+# Archivos de entorno (Contienen contraseñas y claves secretas)
+.env
+.env.local
+.env.*.local
+
+# Carpetas de producción / compilación
+dist/
+build/
+
+# Archivos del sistema operativo o editores
+.DS_Store
+.vscode/
+.idea/
+npm-debug.log*
+yarn-error.log*

@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>San Telmo Verde — Plataforma Ciudadana</title>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;0,600;0,800;1,300&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="styles.css">
+  <!-- Google Identity Services (login real) -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+  <nav>
+    <div class="nav-logo">San Telmo <span>Verde</span></div>
+    <ul class="nav-links">
+      <li><a href="#mapa">Mapa</a></li>
+      <li><a href="#estadisticas">Estadísticas</a></li>
+      <li><a href="#propuestas">Propuestas</a></li>
+      <li><a href="#asistente">Asistente</a></li>
+    </ul>
+    <div class="nav-auth" id="navAuth">
+      <button type="button" class="btn-auth" onclick="abrirModalLogin()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        Ingresar
+      </button>
+    </div>
+  </nav>
+
+  <div class="modal-overlay" id="modalLogin">
+    <div class="modal-box modal-auth">
+      <div class="modal-header">
+        <h3>Únete a San Telmo Verde</h3>
+        <button type="button" class="modal-close-btn" onclick="cerrarModalLogin()" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body auth-body">
+        <p class="auth-lead">Ingresá con Google para proponer espacios verdes y votar. Un voto por propuesta, sin contraseñas.</p>
+        <!-- Botón oficial de Google Identity Services -->
+        <div id="googleBtnWrap" class="google-btn-wrap">
+          <div id="g_id_onload"
+               data-client_id="PEGAR_AQUI_TU_CLIENT_ID.apps.googleusercontent.com"
+               data-context="signin"
+               data-ux_mode="popup"
+               data-callback="manejarRespuestaGoogle"
+               data-auto_prompt="false">
+          </div>
+          <div class="g_id_signin"
+               data-type="standard"
+               data-shape="rectangular"
+               data-theme="outline"
+               data-text="signin_with"
+               data-size="large"
+               data-logo_alignment="left"
+               data-width="320">
+          </div>
+        </div>
+        <p id="googleConfigHint" class="auth-hint google-config-hint">
+          Si no ves el botón de Google: configurá tu <strong>Client ID</strong> en
+          <code>index.html</code> y <code>script.js</code> (ver instrucciones abajo).
+        </p>
+        <p class="auth-hint">Al ingresar aceptás participar de forma ciudadana y respetuosa. Tus votos quedan asociados a tu cuenta para evitar duplicados.</p>
+      </div>
+    </div>
+  </div>
+
+  <section class="hero">
+    <div class="hero-badge">Plataforma Ciudadana · San Telmo, Buenos Aires</div>
+    <div class="hero-stat">
+      <div class="number">1.8</div>
+      <span class="unit">m² de espacio verde por habitante</span>
+    </div>
+    <h1 class="hero-headline">San Telmo merece más verde, menos cemento</h1>
+    <p class="hero-sub">
+      La OMS recomienda 9 m² por persona. Juntos podemos identificar terrenos
+      subutilizados, proponer plazas de bolsillo y transformar el barrio.
+    </p>
+    <div class="hero-actions">
+      <a href="#propuestas" class="btn-primary">Hacer una propuesta</a>
+      <a href="#mapa" class="btn-outline1">Ver el mapa</a>
+    </div>
+    <div class="hero-scroll">Explorar</div>
+  </section>
+
+  <section id="mapa">
+    <div class="section-inner">
+      <div class="section-label">Mapa Interactivo</div>
+      <h2 class="section-title">Espacios verdes y zonas de déficit</h2>
+      <p class="section-desc">
+        Visualizá los espacios verdes existentes, las zonas con mayor
+        temperatura urbana y los terrenos con potencial para nuevas plazas
+        en San Telmo.
+      </p>
+      <div class="filtros-mapa">
+        <button type="button" class="filtro-btn verde active" onclick="filtrar('verde', this)">🌳 Espacios verdes</button>
+        <button type="button" class="filtro-btn calor active" onclick="filtrar('calor', this)">🌡️ Islas de calor</button>
+        <button type="button" class="filtro-btn prop active" onclick="filtrar('prop', this)">📍 Propuestas ciudadanas</button>
+      </div>
+      <div class="mapa-grid">
+        <div>
+          <div class="mapa-canvas">
+            <div id="map"></div>
+            <div id="modoUbicacionBanner" class="modo-ubicacion-banner hidden">
+              <span>📍 Hacé clic en el mapa para marcar la ubicación de tu propuesta</span>
+              <button type="button" class="btn-cancelar-ubicacion" onclick="cancelarModoUbicacion()">Cancelar</button>
+            </div>
+          </div>
+          <div class="mapa-leyenda">
+            <div class="leyenda-item"><div class="leyenda-dot" style="background:#40916C"></div> Espacio verde existente</div>
+            <div class="leyenda-item"><div class="leyenda-dot" style="background:#C0392B"></div> Isla de calor</div>
+            <div class="leyenda-item"><div class="leyenda-dot" style="background:#C8940A"></div> Propuesta ciudadana</div>
+          </div>
+        </div>
+        <div id="mapaPanel" class="panel-lateral"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="estadisticas">
+    <div class="section-inner">
+      <div class="section-label">Indicadores Ambientales</div>
+      <h2 class="section-title">San Telmo en números</h2>
+      <p class="section-desc">
+        Datos actualizados sobre cobertura verde, temperatura urbana y
+        participación ciudadana en el barrio.
+      </p>
+      <div class="stats-grid">
+        <div class="stat-cell"><div class="val">1.8</div><div class="lbl">m² de espacio verde por habitante</div><div class="trend trend-neg">↓ 80% bajo la recomendación OMS</div></div>
+        <div class="stat-cell"><div class="val">+4°C</div><div class="lbl">temperatura urbana en zonas sin vegetación</div><div class="trend trend-neg">↑ Efecto isla de calor en verano</div></div>
+        <div class="stat-cell"><div class="val">67%</div><div class="lbl">del suelo destinado a usos comerciales</div><div class="trend trend-neg">↑ 23% en los últimos 10 años</div></div>
+        <div class="stat-cell"><div class="val">2</div><div class="lbl">espacios verdes públicos en todo el barrio</div><div class="trend trend-neg">↓ Contra 8 barrios similares</div></div>
+        <div class="stat-cell"><div class="val" id="statVecinos">0</div><div class="lbl">vecinos participando en la plataforma</div><div class="trend trend-pos">↑ Participación ciudadana</div></div>
+        <div class="stat-cell"><div class="val" id="statPropuestas">0</div><div class="lbl">propuestas ciudadanas activas</div><div class="trend trend-pos">↑ Desde la comunidad</div></div>
+      </div>
+      <div class="barras-titulo">Cobertura verde vs déficit por zona · San Telmo</div>
+      <div>
+        <div class="barra-row"><div class="barra-label"><span>Zona Norte (San Juan)</span><span>2.1 m²/hab</span></div><div class="barra-track"><div class="barra-fill" style="width:0%" data-ancho="23%"></div></div></div>
+        <div class="barra-row"><div class="barra-label"><span>Zona Centro (Defensa)</span><span>0.9 m²/hab</span></div><div class="barra-track"><div class="barra-fill calor" style="width:0%" data-ancho="10%"></div></div></div>
+        <div class="barra-row"><div class="barra-label"><span>Zona Sur (Brasil)</span><span>4.8 m²/hab ★</span></div><div class="barra-track"><div class="barra-fill" style="width:0%" data-ancho="53%"></div></div></div>
+        <div class="barra-row"><div class="barra-label"><span>Zona Este (Paseo Colón)</span><span>0.4 m²/hab</span></div><div class="barra-track"><div class="barra-fill calor" style="width:0%" data-ancho="4%"></div></div></div>
+        <div class="barra-row"><div class="barra-label"><span>Meta OMS recomendada</span><span>9 m²/hab</span></div><div class="barra-track"><div class="barra-fill" style="width:0%; background: rgba(116,198,157,0.3)" data-ancho="100%"></div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="propuestas">
+    <div class="section-inner">
+      <div class="section-label">Participación Ciudadana</div>
+      <h2 class="section-title">Hacé tu propuesta</h2>
+      <p class="section-desc">
+        ¿Identificaste un terreno vacío, una azotea subutilizada o una zona
+        que necesita verde? Proponé tu idea y sumá votos para que llegue a
+        las autoridades. <strong>Necesitás una cuenta</strong> para publicar y votar.
+      </p>
+      <div class="propuestas-grid">
+        <div class="propuesta-form" id="propuestaFormWrap">
+          <div class="form-title">Nueva propuesta</div>
+          <div class="form-sub">Marcá el lugar en el mapa, completá los datos y publicá. Tu propuesta arranca con 1 voto (el tuyo).</div>
+          <div id="authRequiredBanner" class="auth-required-banner hidden">
+            <p>Para publicar una propuesta tenés que ingresar con Google.</p>
+            <button type="button" class="btn-primary btn-sm" onclick="abrirModalLogin()">Ingresar ahora</button>
+          </div>
+          <div id="formPropuestaCampos">
+            <div class="form-group">
+              <label>Tipo de espacio</label>
+              <div class="tipo-grid">
+                <div class="tipo-btn selected" data-tipo="Plaza de bolsillo" onclick="selectTipo(this)"><span class="tipo-ico">🌳</span>Plaza de bolsillo</div>
+                <div class="tipo-btn" data-tipo="Techo verde" onclick="selectTipo(this)"><span class="tipo-ico">🌿</span>Techo verde</div>
+                <div class="tipo-btn" data-tipo="Jardín comunitario" onclick="selectTipo(this)"><span class="tipo-ico">🌻</span>Jardín comunitario</div>
+                <div class="tipo-btn" data-tipo="Arbolado urbano" onclick="selectTipo(this)"><span class="tipo-ico">🌲</span>Arbolado urbano</div>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Ubicación en el mapa</label>
+              <div class="ubicacion-row">
+                <button type="button" class="btn-ubicacion" id="btnElegirUbicacion" onclick="activarModoUbicacion()">📍 Elegir en el mapa</button>
+                <span id="ubicacionTexto" class="ubicacion-texto">Sin marcar</span>
+              </div>
+              <input type="hidden" id="inputLat" value="">
+              <input type="hidden" id="inputLng" value="">
+            </div>
+            <div class="form-group"><label>Dirección o zona</label><input type="text" id="inputDireccion" placeholder="Ej: Defensa 700, esquina con Brasil"></div>
+            <div class="form-group"><label>Título de la propuesta</label><input type="text" id="inputTitulo" placeholder="Ej: Plaza con bancos y árboles nativos"></div>
+            <div class="form-group"><label>Descripción</label><textarea id="inputDesc" placeholder="Describí el espacio, por qué es importante y cómo imaginás el lugar..."></textarea></div>
+            <button type="button" class="btn-primary" style="width:100%; padding: 1rem;" onclick="enviarPropuesta()">Publicar propuesta →</button>
+          </div>
+        </div>
+        <div>
+          <div style="font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--pizarra-claro); margin-bottom: 1rem;">
+            Propuestas activas · <span id="contadorProp">0</span> publicadas
+          </div>
+          <div id="propuestasList" class="lista-propuestas">
+            <div class="empty-propuestas" id="emptyPropuestas">
+              <p>Todavía no hay propuestas. Sé el primero en proponer un espacio verde en el barrio.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="asistente">
+    <div class="section-inner">
+      <div class="section-label">Asistente del Barrio</div>
+      <h2 class="section-title">¿Tenés dudas sobre tu propuesta?</h2>
+      <p class="section-desc">
+        Nuestro asistente puede ayudarte a formular tu propuesta, entender el
+        proceso y conocer las normativas de espacios verdes en Buenos Aires.
+      </p>
+      <div class="ai-container">
+        <div class="ai-header">
+          <div class="ai-avatar">🌿</div>
+          <div>
+            <div class="ai-name">Asistente San Telmo Verde</div>
+            <div class="ai-status">● En línea · Especialista en espacios urbanos</div>
+          </div>
+        </div>
+        <div class="ai-sugerencias">
+          <div class="sugerencia-chip" onclick="preguntarSugerencia(this)">¿Cómo propongo una plaza de bolsillo?</div>
+          <div class="sugerencia-chip" onclick="preguntarSugerencia(this)">¿Qué normativas aplican en San Telmo?</div>
+          <div class="sugerencia-chip" onclick="preguntarSugerencia(this)">¿Cuánto espacio verde hay en el barrio?</div>
+          <div class="sugerencia-chip" onclick="preguntarSugerencia(this)">¿Qué plantas son nativas de Buenos Aires?</div>
+        </div>
+        <div class="ai-messages" id="aiMessages">
+          <div class="msg msg-bot">¡Hola! Soy el asistente de San Telmo Verde 🌳 Estoy aquí para ayudarte con información sobre espacios verdes, cómo formular tu propuesta o cualquier duda sobre el barrio. ¿En qué te puedo ayudar?</div>
+        </div>
+        <div class="ai-input-row">
+          <input class="ai-input" id="aiInput" type="text" placeholder="Escribí tu pregunta sobre San Telmo...">
+          <button type="button" class="ai-send" id="aiSendBtn" onclick="enviarMensaje()">Enviar</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="footer-inner">
+      <div class="footer-logo">San Telmo <span>Verde</span></div>
+      <div class="footer-sub">Plataforma ciudadana para la recuperación de espacios verdes urbanos.<br>Un proyecto de la comunidad de San Telmo, Buenos Aires.</div>
+      <div class="footer-ods">🎯 ODS 11 · Ciudades y Comunidades Sostenibles</div>
+      <div class="footer-copy">© 2025 San Telmo Verde · Desarrollado como prototipo ciudadano · Equipo 7 · AeroHack Joven</div>
+    </div>
+  </footer>
+
+  <div class="modal-overlay" id="modalTotal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Directorio Completo de Fichas y Propuestas</h3>
+        <button type="button" class="modal-close-btn" onclick="cerrarModalTotal()">×</button>
+      </div>
+      <div class="modal-body" id="modalBodyContent"></div>
+    </div>
+  </div>
+
+  <!-- Panel de moderación -->
+  <div class="modal-overlay" id="modalModeracion">
+    <div class="modal-box modal-mod">
+      <div class="modal-header">
+        <h3>Moderación · San Telmo Verde</h3>
+        <button type="button" class="modal-close-btn" onclick="cerrarModalModeracion()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="mod-tabs">
+          <button type="button" class="mod-tab active" data-tab="denuncias" onclick="cambiarTabMod(this)">Denuncias</button>
+          <button type="button" class="mod-tab" data-tab="propuestas" onclick="cambiarTabMod(this)">Propuestas</button>
+        </div>
+        <div id="modTabDenuncias" class="mod-tab-panel">
+          <p class="mod-hint">Revisá reportes de la comunidad. Podés archivar la propuesta o descartar la denuncia.</p>
+          <div id="modDenunciasList" class="mod-list"></div>
+        </div>
+        <div id="modTabPropuestas" class="mod-tab-panel hidden">
+          <p class="mod-hint">Todas las propuestas. Archivá las inapropiadas; las archivadas no se muestran al público.</p>
+          <div id="modPropuestasList" class="mod-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="script.js"></script>
+</body>
+</html>

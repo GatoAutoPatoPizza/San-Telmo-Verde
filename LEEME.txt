@@ -1,0 +1,44 @@
+SAN TELMO VERDE — INSTALACIÓN RÁPIDA
+=====================================
+
+1) ¿Por qué no viene la carpeta node_modules?
+--------------------------------------------
+Es normal. node_modules pesa mucho y se regenera en tu PC:
+
+  npm install
+  npm start
+
+Eso descarga express, mysql2, cors, google-auth-library, etc.
+Sin "npm install" el comando "npm start" va a fallar.
+
+
+2) Moderación
+-------------
+En script.js, array MODERADORES:
+
+  const MODERADORES = [
+    'tu-email@gmail.com',
+  ];
+
+Ese email debe ser el mismo de la cuenta Google con la que ingresás.
+Al loguearte verás el botón "Mod" en la barra.
+
+Atajo de prueba (consola del navegador F12):
+  localStorage.setItem('stv_soy_mod', '1')
+  location.reload()
+
+Panel Moderación:
+  - Pestaña Denuncias: archivar propuesta o descartar denuncia
+  - Pestaña Propuestas: archivar / restaurar / eliminar
+
+
+3) MySQL (opcional pero recomendado)
+------------------------------------
+Importá codigo_BD.sql y migracion_denuncias.sql en phpMyAdmin.
+En server.js poné password de MySQL si tenés.
+
+
+4) Google Login
+---------------
+Pegá tu Client ID en index.html y script.js
+Abrí siempre http://localhost:3000 (no file://)
