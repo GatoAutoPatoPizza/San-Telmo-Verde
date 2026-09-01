@@ -5,14 +5,18 @@ SAN TELMO VERDE — IMPORTAR SQL + GOOGLE
 1) IMPORTAR EL SQL (phpMyAdmin — XAMPP/WAMP/MAMP)
 -------------------------------------------------
 a. Abrí http://localhost/phpmyadmin
-b. Click en "Importar" (arriba)
-c. "Elegir archivo" → codigo_BD.sql
-d. Click "Continuar" / "Importar"
-e. Deberías ver la base "san_telmo_verde" con las tablas:
-   propuestas, usuarios, votos_propuesta, fichas_mapa
+b. Creá primero una base de datos llamada "STV" (el archivo .sql no la
+   crea solo, así que si no existe o no la seleccionás antes de importar,
+   las tablas van a terminar en la base equivocada)
+c. Con "STV" seleccionada, click en "Importar" (arriba)
+d. "Elegir archivo" → codigo_BD.sql
+e. Click "Continuar" / "Importar"
+f. Deberías ver la base "STV" con las tablas:
+   propuestas, usuarios, votos_propuesta, denuncias, fichas_mapa
 
 Por línea de comandos (si tenés mysql en PATH):
-  mysql -u root -p < codigo_BD.sql
+  mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS STV"
+  mysql -u root -p STV < codigo_BD.sql
 
 Si tu root tiene contraseña, ponela en server.js:
   password: 'tu_clave',
@@ -64,5 +68,3 @@ Abrí en el navegador:  http://localhost:3000
 ---------------
 Ingresar → botón oficial de Google → elegí tu cuenta
 Deberías ver TU nombre y foto en la barra de navegación.
-
-

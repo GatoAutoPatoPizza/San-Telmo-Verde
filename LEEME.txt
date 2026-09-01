@@ -34,7 +34,8 @@ Panel Moderación:
 
 3) MySQL (opcional pero recomendado)
 ------------------------------------
-Importá codigo_BD.sql y migracion_denuncias.sql en phpMyAdmin.
+Creá una base llamada "STV" e importá codigo_BD.sql ahí (ya incluye la
+tabla `denuncias`, no hace falta ningún archivo aparte).
 En server.js poné password de MySQL si tenés.
 
 

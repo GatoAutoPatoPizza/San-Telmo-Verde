@@ -15,5 +15,15 @@
     "google-auth-library": "^9.14.0",
     "mysql": "^2.18.1",
     "mysql2": "^3.11.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GatoAutoPatoPizza/San-Telmo-Verde.git"
+  },
+  "keywords": [],
+  "author": "",
+  "bugs": {
+    "url": "https://github.com/GatoAutoPatoPizza/San-Telmo-Verde/issues"
+  },
+  "homepage": "https://github.com/GatoAutoPatoPizza/San-Telmo-Verde#readme"
 }

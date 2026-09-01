@@ -156,6 +156,162 @@ function esModerador() {
   return MODERADORES.some((m) => m && m.toLowerCase().trim() === email);
 }
 
+/* ── Panel de moderación ──
+   El backend (server.js) autoriza estas acciones validando el email
+   de moderador contra MODERADORES (env var) o el default en server.js.
+   Si acá pasás esModerador() pero el server responde 403, revisá que
+   tu email esté también en el servidor. */
+function emailModerador() {
+  return Store.usuario?.email || '';
+}
+
+function abrirModalModeracion() {
+  if (!esModerador()) return;
+  document.getElementById('modalModeracion')?.classList.add('active');
+  cargarDenunciasMod();
+  cargarPropuestasMod();
+}
+
+function cerrarModalModeracion() {
+  document.getElementById('modalModeracion')?.classList.remove('active');
+}
+
+function cambiarTabMod(btn) {
+  const tab = btn?.dataset?.tab;
+  if (!tab) return;
+  document.querySelectorAll('.mod-tab').forEach((b) => b.classList.toggle('active', b === btn));
+  document.getElementById('modTabDenuncias')?.classList.toggle('hidden', tab !== 'denuncias');
+  document.getElementById('modTabPropuestas')?.classList.toggle('hidden', tab !== 'propuestas');
+}
+
+async function cargarDenunciasMod() {
+  const cont = document.getElementById('modDenunciasList');
+  if (!cont) return;
+  cont.innerHTML = '<div class="mod-empty">Cargando…</div>';
+  try {
+    const res = await fetch(`${API_BASE}/api/mod/denuncias?email=${encodeURIComponent(emailModerador())}`);
+    if (!res.ok) throw new Error('No autorizado');
+    const denuncias = await res.json();
+    renderModDenuncias(denuncias);
+  } catch (_) {
+    cont.innerHTML = '<div class="mod-empty">No se pudieron cargar las denuncias. ¿Tu email está en MODERADORES del servidor?</div>';
+  }
+}
+
+function renderModDenuncias(denuncias) {
+  const cont = document.getElementById('modDenunciasList');
+  if (!cont) return;
+  if (!denuncias || denuncias.length === 0) {
+    cont.innerHTML = '<div class="mod-empty">No hay denuncias pendientes.</div>';
+    return;
+  }
+  cont.innerHTML = denuncias
+    .map(
+      (d) => `
+      <div class="mod-card">
+        <h4>${escapeHtml(d.titulo || 'Propuesta eliminada')}</h4>
+        <p><strong>Motivo:</strong> ${escapeHtml(d.motivo || 'Sin motivo')}</p>
+        <p><strong>Denunciante:</strong> ${escapeHtml(d.denunciante || 'Desconocido')}</p>
+        <div class="mod-meta">Propuesta #${escapeHtml(String(d.propuesta_id))} · ${escapeHtml(d.propuesta_estado || '')}</div>
+        <div class="mod-actions">
+          <button type="button" class="mod-btn mod-btn-archive" onclick="archivarDesdeDenuncia('${d.id}', '${d.propuesta_id}')">Archivar propuesta</button>
+          <button type="button" class="mod-btn mod-btn-ok" onclick="descartarDenuncia('${d.id}')">Descartar denuncia</button>
+        </div>
+      </div>`
+    )
+    .join('');
+}
+
+async function descartarDenuncia(id) {
+  try {
+    await fetch(`${API_BASE}/api/mod/denuncias/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: emailModerador(), estado: 'descartada' }),
+    });
+  } catch (_) {}
+  cargarDenunciasMod();
+}
+
+async function archivarDesdeDenuncia(id, propuestaId) {
+  try {
+    await fetch(`${API_BASE}/api/mod/denuncias/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: emailModerador(), estado: 'revisada', propuesta_id: propuestaId }),
+    });
+  } catch (_) {}
+  cargarDenunciasMod();
+  cargarPropuestasMod();
+  await intentarCargarDesdeAPI();
+  renderAll();
+}
+
+async function cargarPropuestasMod() {
+  const cont = document.getElementById('modPropuestasList');
+  if (!cont) return;
+  cont.innerHTML = '<div class="mod-empty">Cargando…</div>';
+  try {
+    const res = await fetch(`${API_BASE}/api/mod/propuestas?email=${encodeURIComponent(emailModerador())}`);
+    if (!res.ok) throw new Error('No autorizado');
+    const propuestas = await res.json();
+    renderModPropuestas(propuestas);
+  } catch (_) {
+    cont.innerHTML = '<div class="mod-empty">No se pudieron cargar las propuestas. ¿Tu email está en MODERADORES del servidor?</div>';
+  }
+}
+
+function renderModPropuestas(propuestas) {
+  const cont = document.getElementById('modPropuestasList');
+  if (!cont) return;
+  if (!propuestas || propuestas.length === 0) {
+    cont.innerHTML = '<div class="mod-empty">No hay propuestas todavía.</div>';
+    return;
+  }
+  cont.innerHTML = propuestas
+    .map((p) => {
+      const archivada = p.estado === 'Archivada';
+      const badge = archivada ? '<span class="mod-badge archivada">Archivada</span>' : `<span class="mod-badge">${escapeHtml(p.estado)}</span>`;
+      const accion = archivada
+        ? `<button type="button" class="mod-btn mod-btn-restore" onclick="restaurarPropuestaMod('${p.id}')">Restaurar</button>`
+        : `<button type="button" class="mod-btn mod-btn-archive" onclick="archivarPropuestaMod('${p.id}')">Archivar</button>`;
+      return `
+      <div class="mod-card">
+        <h4>${escapeHtml(p.titulo)} ${badge}</h4>
+        <p>${escapeHtml(p.descripcion || '')}</p>
+        <div class="mod-meta">${escapeHtml(p.direccion || '')} · ${escapeHtml(p.nombre_usuario || 'Anonimo')} · ${p.votos || 0} votos</div>
+        <div class="mod-actions">${accion}</div>
+      </div>`;
+    })
+    .join('');
+}
+
+async function archivarPropuestaMod(id) {
+  try {
+    await fetch(`${API_BASE}/api/mod/propuestas/${encodeURIComponent(id)}/archivar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: emailModerador() }),
+    });
+  } catch (_) {}
+  cargarPropuestasMod();
+  await intentarCargarDesdeAPI();
+  renderAll();
+}
+
+async function restaurarPropuestaMod(id) {
+  try {
+    await fetch(`${API_BASE}/api/mod/propuestas/${encodeURIComponent(id)}/restaurar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: emailModerador() }),
+    });
+  } catch (_) {}
+  cargarPropuestasMod();
+  await intentarCargarDesdeAPI();
+  renderAll();
+}
+
 /** ¿La propuesta es del usuario logueado? (por usuario_id o email/nombre de creador) */
 function esPropuestaMia(p) {
   if (!Store.usuario || !p) return false;

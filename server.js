@@ -14,7 +14,7 @@ const db = mysql.createConnection({
   host: 'localhost',
   user: 'root',
   password: '', // tu contraseña de MySQL si tiene
-  database: 'san_telmo_verde',
+  database: 'STV',
 });
 
 db.connect((err) => {
@@ -374,6 +374,17 @@ app.get('/api/mod/denuncias', async (req, res) => {
     res.json(rows);
   } catch (e) {
     if (e.code === 'ER_NO_SUCH_TABLE') return res.json([]);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/mod/propuestas', async (req, res) => {
+  const email = req.query.email || req.headers['x-mod-email'];
+  if (!esModeradorEmail(email)) return res.status(403).json({ error: 'No autorizado' });
+  try {
+    const rows = await dbQuery('SELECT * FROM propuestas ORDER BY created_at DESC');
+    res.json(rows);
+  } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
