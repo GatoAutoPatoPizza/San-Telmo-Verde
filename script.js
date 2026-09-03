@@ -826,7 +826,7 @@ function syncMarcadoresDesdeStore() {
 
 function inicializarMapa() {
   Store.mapa = L.map('map').setView(CENTRO_SAN_TELMO, 15);
-  L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png', {
+  L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png?api_key=c016fa8b-688d-42ab-bde9-1159cfe1a15d', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     maxZoom: 19,
   }).addTo(Store.mapa);
