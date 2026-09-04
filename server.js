@@ -1,20 +1,27 @@
+require('dotenv').config();
+
 const express = require('express');
 const mysql = require('mysql');
 const cors = require('cors');
 const path = require('path');
 
 const app = express();
+// Necesario detrás de un proxy/túnel (Codespaces, Render, Railway, etc.)
+// para que Express detecte bien https y la IP real del cliente.
+app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json());
 
-// Servir el front desde la misma carpeta (así Google acepta el origen http://localhost:3000)
+// Servir el front desde la misma carpeta. Como el front usa rutas
+// relativas ("/api/..."), esto funciona sirviendo en localhost:3000
+// o detrás de cualquier dominio público (Codespaces, VPS, etc.).
 app.use(express.static(__dirname));
 
 const db = mysql.createConnection({
-  host: 'localhost',
-  user: 'root',
-  password: '', // tu contraseña de MySQL si tiene
-  database: 'STV',
+  host: process.env.DB_HOST || 'localhost',
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '', // tu contraseña de MySQL si tiene
+  database: process.env.DB_NAME || 'STV',
 });
 
 db.connect((err) => {
@@ -348,6 +355,61 @@ app.post('/api/propuestas/:id/denunciar', async (req, res) => {
 
 
 
+// ——— Asistente IA (proxy a la API de Anthropic) ———
+// La API key NUNCA va en script.js/index.html: vive acá, en el server,
+// tomada de la variable de entorno ANTHROPIC_API_KEY (ver .env.example).
+const SYSTEM_PROMPT = `Sos el asistente de la plataforma San Telmo Verde, una iniciativa ciudadana de Buenos Aires para recuperar espacios verdes urbanos en el barrio de San Telmo.
+
+Tu rol es ayudar a vecinos y vecinas con:
+- Información sobre el proceso para proponer plazas de bolsillo, techos verdes y jardines comunitarios
+- Datos sobre espacios verdes en San Telmo y Buenos Aires
+- Normativas urbanísticas relevantes (mencionar que para detalles legales deben consultar la Legislatura o el GCBA)
+- Plantas nativas de Buenos Aires recomendadas para espacios urbanos
+- Cómo reducir el efecto isla de calor
+- El ODS 11 y ciudades sostenibles
+
+Respondé de forma cálida, cercana y concreta. Usá frases cortas. Podés usar algún emoji ocasionalmente. Siempre alentá la participación ciudadana. Respondé siempre en español rioplatense.`;
+
+app.post('/api/ai/chat', async (req, res) => {
+  const mensaje = (req.body && req.body.mensaje || '').toString().trim().slice(0, 2000);
+  if (!mensaje) return res.status(400).json({ error: 'Falta el mensaje' });
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({
+      error: 'El asistente no está configurado: falta ANTHROPIC_API_KEY en el servidor.',
+    });
+  }
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1000,
+        system: SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: mensaje }],
+      }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      console.error('Error de Anthropic API:', data);
+      return res.status(502).json({ error: 'El asistente no pudo responder. Probá de nuevo.' });
+    }
+    const texto = data.content?.find((b) => b.type === 'text')?.text || '';
+    res.json({ texto: texto || 'No obtuve respuesta, probá reformular tu consulta.' });
+  } catch (e) {
+    console.error('Fallo llamando a Anthropic:', e.message);
+    res.status(500).json({ error: 'Hubo un error al conectar con el asistente.' });
+  }
+});
+
 // ——— Moderación ———
 const MODERADORES = (process.env.MODERADORES || 'tu-email@gmail.com')
   .split(',')
@@ -430,7 +492,10 @@ app.post('/api/mod/propuestas/:id/restaurar', async (req, res) => {
 
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`San Telmo Verde: http://localhost:${PORT}`);
-  console.log('Abrí esa URL (no file://) para que Google Sign-In funcione.');
+// 0.0.0.0 = escuchar en todas las interfaces, imprescindible para que
+// Codespaces / contenedores / VPS puedan reenviar el puerto hacia afuera.
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`San Telmo Verde escuchando en el puerto ${PORT}`);
+  console.log(`Local:  http://localhost:${PORT}`);
+  console.log('Abrí la URL pública asignada por tu entorno (Codespaces, etc.) — nunca file://.');
 });

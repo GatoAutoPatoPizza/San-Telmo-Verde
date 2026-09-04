@@ -4,7 +4,11 @@
 ============================================ */
 
 const CENTRO_SAN_TELMO = [-34.6212, -58.3714];
-const API_BASE = 'http://localhost:3000';
+/* API_BASE vacío = rutas relativas ("/api/...").
+   Así el front pega siempre al MISMO host que lo sirvió, sea
+   http://localhost:3000, tu Codespace (*.app.github.dev) o
+   cualquier otro dominio público. NO hardcodear localhost acá. */
+const API_BASE = '';
 
 /* ── PEGÁ ACÁ tu Client ID de Google Cloud Console ──
    Debe coincidir con data-client_id en index.html
@@ -1086,17 +1090,8 @@ function activarScrollSuave() {
   });
 }
 
-const SYSTEM_PROMPT = `Sos el asistente de la plataforma San Telmo Verde, una iniciativa ciudadana de Buenos Aires para recuperar espacios verdes urbanos en el barrio de San Telmo.
-
-Tu rol es ayudar a vecinos y vecinas con:
-- Información sobre el proceso para proponer plazas de bolsillo, techos verdes y jardines comunitarios
-- Datos sobre espacios verdes en San Telmo y Buenos Aires
-- Normativas urbanísticas relevantes (mencionar que para detalles legales deben consultar la Legislatura o el GCBA)
-- Plantas nativas de Buenos Aires recomendadas para espacios urbanos
-- Cómo reducir el efecto isla de calor
-- El ODS 11 y ciudades sostenibles
-
-Respondé de forma cálida, cercana y concreta. Usá frases cortas. Podés usar algún emoji ocasionalmente. Siempre alentá la participación ciudadana. Respondé siempre en español rioplatense.`;
+// El prompt del asistente ahora vive en server.js (junto con la API key),
+// no en el navegador. Ver SYSTEM_PROMPT en server.js si lo querés editar.
 
 function addMsg(texto, rol) {
   const box = document.getElementById('aiMessages');
@@ -1130,19 +1125,20 @@ async function enviarMensaje() {
   if (aiSendBtn) aiSendBtn.disabled = true;
   const typing = addTyping();
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    // Llamamos a NUESTRO backend (/api/ai/chat), no directo a Anthropic:
+    // la API key vive en el servidor (.env) y nunca se expone en el navegador.
+    const response = await fetch(`${API_BASE}/api/ai/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1000,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: texto }],
-      }),
+      body: JSON.stringify({ mensaje: texto }),
     });
     const data = await response.json();
     typing?.remove();
-    addMsg(data.content?.[0]?.text || 'Lo siento, no pude procesar tu consulta. Intentá de nuevo.', 'bot');
+    if (!response.ok) {
+      addMsg(data.error || 'Lo siento, no pude procesar tu consulta. Intentá de nuevo.', 'bot');
+    } else {
+      addMsg(data.texto || 'Lo siento, no pude procesar tu consulta. Intentá de nuevo.', 'bot');
+    }
   } catch {
     typing?.remove();
     addMsg('Hubo un error al conectar. Por favor intentá de nuevo en un momento.', 'bot');
