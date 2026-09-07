@@ -1125,7 +1125,7 @@ async function enviarMensaje() {
   if (aiSendBtn) aiSendBtn.disabled = true;
   const typing = addTyping();
   try {
-    // Llamamos a NUESTRO backend (/api/ai/chat), no directo a Anthropic:
+    // Llamamos a NUESTRO backend (/api/ai/chat), no directo a Google:
     // la API key vive en el servidor (.env) y nunca se expone en el navegador.
     const response = await fetch(`${API_BASE}/api/ai/chat`, {
       method: 'POST',
