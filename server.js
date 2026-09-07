@@ -355,9 +355,10 @@ app.post('/api/propuestas/:id/denunciar', async (req, res) => {
 
 
 
-// ——— Asistente IA (proxy a la API de Anthropic) ———
+// ——— Asistente IA (proxy a la API de Gemini de Google) ———
 // La API key NUNCA va en script.js/index.html: vive acá, en el server,
-// tomada de la variable de entorno ANTHROPIC_API_KEY (ver .env.example).
+// tomada de la variable de entorno GEMINI_API_KEY (ver .env.example).
+// Conseguila gratis en https://aistudio.google.com/apikey
 const SYSTEM_PROMPT = `Sos el asistente de la plataforma San Telmo Verde, una iniciativa ciudadana de Buenos Aires para recuperar espacios verdes urbanos en el barrio de San Telmo.
 
 Tu rol es ayudar a vecinos y vecinas con:
@@ -370,42 +371,44 @@ Tu rol es ayudar a vecinos y vecinas con:
 
 Respondé de forma cálida, cercana y concreta. Usá frases cortas. Podés usar algún emoji ocasionalmente. Siempre alentá la participación ciudadana. Respondé siempre en español rioplatense.`;
 
+const GEMINI_MODEL = 'gemini-2.5-flash';
+
 app.post('/api/ai/chat', async (req, res) => {
   const mensaje = (req.body && req.body.mensaje || '').toString().trim().slice(0, 2000);
   if (!mensaje) return res.status(400).json({ error: 'Falta el mensaje' });
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return res.status(500).json({
-      error: 'El asistente no está configurado: falta ANTHROPIC_API_KEY en el servidor.',
+      error: 'El asistente no está configurado: falta GEMINI_API_KEY en el servidor.',
     });
   }
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1000,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: mensaje }],
-      }),
-    });
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
+        },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: mensaje }] }],
+          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        }),
+      }
+    );
 
     const data = await response.json();
     if (!response.ok) {
-      console.error('Error de Anthropic API:', data);
+      console.error('Error de Gemini API:', data);
       return res.status(502).json({ error: 'El asistente no pudo responder. Probá de nuevo.' });
     }
-    const texto = data.content?.find((b) => b.type === 'text')?.text || '';
+    const texto = data.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
     res.json({ texto: texto || 'No obtuve respuesta, probá reformular tu consulta.' });
   } catch (e) {
-    console.error('Fallo llamando a Anthropic:', e.message);
+    console.error('Fallo llamando a Gemini:', e.message);
     res.status(500).json({ error: 'Hubo un error al conectar con el asistente.' });
   }
 });
