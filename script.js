@@ -220,10 +220,23 @@ function renderModDenuncias(denuncias) {
         <div class="mod-actions">
           <button type="button" class="mod-btn mod-btn-archive" onclick="archivarDesdeDenuncia('${d.id}', '${d.propuesta_id}')">Archivar propuesta</button>
           <button type="button" class="mod-btn mod-btn-ok" onclick="descartarDenuncia('${d.id}')">Descartar denuncia</button>
+          <button type="button" class="mod-btn mod-btn-danger" onclick="eliminarDenuncia('${d.id}')">Eliminar denuncia</button>
         </div>
       </div>`
     )
     .join('');
+}
+
+async function eliminarDenuncia(id) {
+  if (!confirm('¿Eliminar esta denuncia definitivamente? No se puede deshacer.')) return;
+  try {
+    await fetch(`${API_BASE}/api/mod/denuncias/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: emailModerador() }),
+    });
+  } catch (_) {}
+  cargarDenunciasMod();
 }
 
 async function descartarDenuncia(id) {
@@ -279,12 +292,13 @@ function renderModPropuestas(propuestas) {
       const accion = archivada
         ? `<button type="button" class="mod-btn mod-btn-restore" onclick="restaurarPropuestaMod('${p.id}')">Restaurar</button>`
         : `<button type="button" class="mod-btn mod-btn-archive" onclick="archivarPropuestaMod('${p.id}')">Archivar</button>`;
+      const eliminarBtn = `<button type="button" class="mod-btn mod-btn-danger" onclick="eliminarPropuestaMod('${p.id}')">Eliminar</button>`;
       return `
       <div class="mod-card">
         <h4>${escapeHtml(p.titulo)} ${badge}</h4>
         <p>${escapeHtml(p.descripcion || '')}</p>
         <div class="mod-meta">${escapeHtml(p.direccion || '')} · ${escapeHtml(p.nombre_usuario || 'Anonimo')} · ${p.votos || 0} votos</div>
-        <div class="mod-actions">${accion}</div>
+        <div class="mod-actions">${accion}${eliminarBtn}</div>
       </div>`;
     })
     .join('');
@@ -312,6 +326,21 @@ async function restaurarPropuestaMod(id) {
     });
   } catch (_) {}
   cargarPropuestasMod();
+  await intentarCargarDesdeAPI();
+  renderAll();
+}
+
+async function eliminarPropuestaMod(id) {
+  if (!confirm('¿Eliminar esta propuesta definitivamente? También se borran sus votos y denuncias asociadas. No se puede deshacer.')) return;
+  try {
+    await fetch(`${API_BASE}/api/mod/propuestas/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: emailModerador() }),
+    });
+  } catch (_) {}
+  cargarPropuestasMod();
+  cargarDenunciasMod();
   await intentarCargarDesdeAPI();
   renderAll();
 }
