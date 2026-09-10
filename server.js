@@ -175,9 +175,9 @@ app.post('/api/propuestas', async (req, res) => {
 
     const result = await dbQuery(
       `INSERT INTO propuestas
-        (titulo, direccion, descripcion, tipo, votos, nombre_usuario, estado, latitud, longitud)
-       VALUES (?, ?, ?, ?, 1, ?, 'Nueva', ?, ?)`,
-      [titulo, direccion, descripcion || '', tipo || 'Plaza de bolsillo', nombreUsuario, latitud ?? null, longitud ?? null]
+        (titulo, direccion, descripcion, tipo, votos, nombre_usuario, usuario_id, estado, latitud, longitud)
+       VALUES (?, ?, ?, ?, 1, ?, ?, 'Nueva', ?, ?)`,
+      [titulo, direccion, descripcion || '', tipo || 'Plaza de bolsillo', nombreUsuario, usuarioId, latitud ?? null, longitud ?? null]
     );
 
     const propuestaId = result.insertId;
@@ -281,10 +281,17 @@ app.delete('/api/propuestas/:id', async (req, res) => {
       const u2 = await dbQuery('SELECT id FROM usuarios WHERE google_id = ? LIMIT 1', [String(usuario_id)]);
       if (u2.length) uid = u2[0].id;
     }
-
-    // Verificar autoría por nombre_usuario vs usuario (simplificado)
-    // Ideal: columna usuario_id en propuestas. Por ahora permitimos delete si el usuario existe.
     if (!uid) return res.status(401).json({ error: 'Usuario requerido' });
+
+    // Verificar autoría real contra la columna usuario_id de la propuesta.
+    // Antes esto solo chequeaba que el usuario existiera (cualquier usuario
+    // logueado podía borrar la propuesta de otro); ahora se exige que sea el autor.
+    const propRows = await dbQuery('SELECT usuario_id FROM propuestas WHERE id = ?', [propuestaId]);
+    if (!propRows.length) return res.status(404).json({ error: 'Propuesta no encontrada' });
+    const dueño = propRows[0].usuario_id;
+    if (dueño != null && String(dueño) !== String(uid)) {
+      return res.status(403).json({ error: 'Solo podés eliminar tus propias propuestas' });
+    }
 
     await dbQuery('DELETE FROM propuestas WHERE id = ?', [propuestaId]);
     res.json({ ok: true, id: propuestaId });
