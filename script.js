@@ -345,16 +345,19 @@ async function eliminarPropuestaMod(id) {
   renderAll();
 }
 
-/** ¿La propuesta es del usuario logueado? (por usuario_id o email/nombre de creador) */
+/** ¿La propuesta es del usuario logueado? (por usuario_id real) */
 function esPropuestaMia(p) {
   if (!Store.usuario || !p) return false;
-  if (p.usuario_id && String(p.usuario_id) === String(Store.usuario.id)) return true;
-  if (p.usuario_id && Store.usuario.google_id && String(p.usuario_id) === String(Store.usuario.google_id)) return true;
-  // Fallback: mismo nombre de usuario guardado al crear (sesión local)
-  if (p.nombre_usuario && Store.usuario.nombre && p.nombre_usuario === Store.usuario.nombre) {
-    // solo si además hay match de email implícito en sesión reciente — preferimos ids
-    if (p.usuario_id == null || p.usuario_id === '' || String(p.usuario_id) === String(Store.usuario.id)) return true;
+  // Fuente de verdad: usuario_id guardado en la propuesta (columna real en BD).
+  if (p.usuario_id != null && p.usuario_id !== '') {
+    return (
+      String(p.usuario_id) === String(Store.usuario.id) ||
+      (Store.usuario.google_id && String(p.usuario_id) === String(Store.usuario.google_id))
+    );
   }
+  // Fallback SOLO para propuestas viejas creadas antes de tener usuario_id
+  // (sin ese dato no hay forma confiable de saber el dueño). No usar el
+  // nombre como prueba de identidad: dos vecinos pueden llamarse igual.
   return false;
 }
 
@@ -748,7 +751,14 @@ function upsertPropuesta(raw) {
   return p;
 }
 
-async function crearPropuesta(datos) {
+/**
+ * Crea una propuesta.
+ * onProgreso(etapa) es opcional y se llama en cada paso para poder
+ * animar una barra de carga: 'enviando' -> 'guardando' -> 'lista' | 'error'.
+ */
+async function crearPropuesta(datos, onProgreso) {
+  const avisar = (etapa) => { if (typeof onProgreso === 'function') onProgreso(etapa); };
+
   if (!select.isLoggedIn()) {
     abrirModalLogin();
     return null;
@@ -779,31 +789,48 @@ async function crearPropuesta(datos) {
     usuario_id: Store.usuario.id,
   });
 
-  persistVoto(draft.id);
+  avisar('enviando');
 
+  let res;
   try {
-    const res = await fetch(`${API_BASE}/api/propuestas`, {
+    res = await fetch(`${API_BASE}/api/propuestas`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...draft, usuario: Store.usuario }),
     });
-    if (res.ok) {
-      const saved = await res.json();
-      if (saved?.id) {
-        const oldId = draft.id;
-        draft.id = String(saved.id);
-        if (typeof saved.votos === 'number') draft.votos = saved.votos;
-        if (Store.votosUsuario.has(oldId)) {
-          Store.votosUsuario.delete(oldId);
-          persistVoto(draft.id);
-        }
-      }
-    }
-  } catch (_) {}
+  } catch (e) {
+    // Error de red: no se pudo ni siquiera contactar al servidor.
+    avisar('error');
+    alert('No se pudo conectar con el servidor. Revisá tu conexión y volvé a intentar.');
+    return null;
+  }
+
+  if (!res.ok) {
+    // El servidor respondió pero rechazó la propuesta: NO la mostramos
+    // como publicada (antes esto quedaba en el Store igual, mintiéndole
+    // al usuario). Se informa el error real cuando el servidor lo manda.
+    avisar('error');
+    let mensaje = 'No se pudo publicar la propuesta. Probá de nuevo en unos segundos.';
+    try {
+      const err = await res.json();
+      if (err?.error) mensaje = err.error;
+    } catch (_) {}
+    alert(mensaje);
+    return null;
+  }
+
+  avisar('guardando');
+  const saved = await res.json();
+  if (saved?.id) {
+    draft.id = String(saved.id);
+    if (typeof saved.votos === 'number') draft.votos = saved.votos;
+  }
+  persistVoto(draft.id);
 
   upsertPropuesta(draft);
   clearMarcadorTemporal();
   renderAll();
+  avisar('lista');
   return draft;
 }
 
@@ -1039,18 +1066,64 @@ function selectTipo(boton) {
   boton.classList.add('selected');
 }
 
+/** Mueve la barra de progreso y el texto según la etapa del envío. */
+function actualizarProgresoPropuesta(etapa) {
+  const cont = document.getElementById('propuestaProgreso');
+  const relleno = document.getElementById('propuestaProgresoRelleno');
+  const texto = document.getElementById('propuestaProgresoTexto');
+  if (!cont || !relleno || !texto) return;
+
+  const etapas = {
+    enviando: { pct: 35, msg: 'Enviando propuesta…', error: false },
+    guardando: { pct: 75, msg: 'Guardando en la base de datos…', error: false },
+    lista: { pct: 100, msg: '¡Publicada con éxito!', error: false },
+    error: { pct: 100, msg: 'No se pudo publicar. Probá de nuevo.', error: true },
+  };
+  const e = etapas[etapa];
+  if (!e) return;
+
+  cont.classList.remove('hidden');
+  relleno.style.width = e.pct + '%';
+  relleno.classList.toggle('error', e.error);
+  texto.textContent = e.msg;
+
+  if (etapa === 'lista' || etapa === 'error') {
+    // Se deja la barra completa un momento (para que el usuario la vea
+    // llegar al 100% y confirme que ya quedó publicada) y después se oculta.
+    setTimeout(() => {
+      cont.classList.add('hidden');
+      relleno.style.width = '0%';
+      relleno.classList.remove('error');
+    }, etapa === 'lista' ? 1600 : 2600);
+  }
+}
+
 async function enviarPropuesta() {
+  const boton = document.getElementById('btnPublicarPropuesta');
   const tipoBtn = document.querySelector('.tipo-btn.selected');
   const latRaw = document.getElementById('inputLat')?.value;
   const lngRaw = document.getElementById('inputLng')?.value;
-  const creada = await crearPropuesta({
-    titulo: (document.getElementById('inputTitulo')?.value || '').trim(),
-    direccion: (document.getElementById('inputDireccion')?.value || '').trim(),
-    descripcion: (document.getElementById('inputDesc')?.value || '').trim(),
-    tipo: tipoBtn?.dataset?.tipo || tipoBtn?.textContent?.trim() || 'Plaza de bolsillo',
-    latitud: latRaw ? parseFloat(latRaw) : null,
-    longitud: lngRaw ? parseFloat(lngRaw) : null,
-  });
+
+  // Evita doble publicación por doble clic mientras se está enviando.
+  if (boton) boton.disabled = true;
+
+  let creada = null;
+  try {
+    creada = await crearPropuesta(
+      {
+        titulo: (document.getElementById('inputTitulo')?.value || '').trim(),
+        direccion: (document.getElementById('inputDireccion')?.value || '').trim(),
+        descripcion: (document.getElementById('inputDesc')?.value || '').trim(),
+        tipo: tipoBtn?.dataset?.tipo || tipoBtn?.textContent?.trim() || 'Plaza de bolsillo',
+        latitud: latRaw ? parseFloat(latRaw) : null,
+        longitud: lngRaw ? parseFloat(lngRaw) : null,
+      },
+      actualizarProgresoPropuesta
+    );
+  } finally {
+    if (boton) boton.disabled = false;
+  }
+
   if (!creada) return;
   document.getElementById('inputTitulo').value = '';
   document.getElementById('inputDireccion').value = '';
