@@ -67,12 +67,23 @@ CREATE TABLE `propuestas` (
   `tipo` varchar(100) NOT NULL,
   `votos` int(11) DEFAULT 1,
   `nombre_usuario` varchar(100) DEFAULT 'Anonimo',
+  `usuario_id` int(11) DEFAULT NULL,
   `estado` enum('Nueva','En revisión','Aprobada','Archivada') DEFAULT 'Nueva',
   `latitud` decimal(10,7) DEFAULT NULL,
   `longitud` decimal(10,7) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+--
+-- MIGRACIÓN: si tu base de datos ya existe y la tabla `propuestas`
+-- fue creada ANTES de este cambio (sin columna usuario_id), corré
+-- solo estas dos líneas una vez para agregarla sin perder datos:
+--
+-- ALTER TABLE `propuestas` ADD COLUMN `usuario_id` int(11) DEFAULT NULL AFTER `nombre_usuario`;
+-- ALTER TABLE `propuestas` ADD KEY `usuario_id` (`usuario_id`);
+--
 
 -- --------------------------------------------------------
 
@@ -123,7 +134,8 @@ ALTER TABLE `fichas_mapa`
 -- Indices de la tabla `propuestas`
 --
 ALTER TABLE `propuestas`
-  ADD PRIMARY KEY (`id`);
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `usuario_id` (`usuario_id`);
 
 --
 -- Indices de la tabla `usuarios`
