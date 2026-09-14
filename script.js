@@ -13,7 +13,7 @@ const API_BASE = '';
 /* ── PEGÁ ACÁ tu Client ID de Google Cloud Console ──
    Debe coincidir con data-client_id en index.html
    Ejemplo: '123456789-abc.apps.googleusercontent.com' */
-const GOOGLE_CLIENT_ID = '139118137933-o5fdngarktip51e5l52lnn0okrf7ija7.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID = '139118137933-3kjkntoismvkic0d48ihvpvmkgq3gq1k.apps.googleusercontent.com';
 
 /* Emails autorizados a moderar (coinciden con el email de Google al ingresar).
    Agregá los del equipo. También podés usar el flag local stv_soy_mod=1 en consola. */
@@ -315,6 +315,8 @@ async function archivarPropuestaMod(id) {
   cargarPropuestasMod();
   await intentarCargarDesdeAPI();
   renderAll();
+ if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID.startsWith('PEGAR_AQUI')) {
+  console.warn('Configurá GOOGLE_CLIENT_ID en script.js e index.html');
 }
 
 async function restaurarPropuestaMod(id) {
