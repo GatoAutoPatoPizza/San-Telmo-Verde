@@ -8,7 +8,7 @@ const CENTRO_SAN_TELMO = [-34.6212, -58.3714];
    Así el front pega siempre al MISMO host que lo sirvió, sea
    http://localhost:3000, tu Codespace (*.app.github.dev) o
    cualquier otro dominio público. NO hardcodear localhost acá. */
-const API_BASE = '';
+const API_BASE = 'https://san-telmo-verde.up.railway.app/';
 
 /* ── PEGÁ ACÁ tu Client ID de Google Cloud Console ──
    Debe coincidir con data-client_id en index.html
