@@ -17,11 +17,12 @@ app.use(express.json());
 // o detrás de cualquier dominio público (Codespaces, VPS, etc.).
 app.use(express.static(__dirname));
 
-const db = mysql.createConnection({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '', // tu contraseña de MySQL si tiene
-  database: process.env.DB_NAME || 'STV',
+const db = mysql.createPool({
+  host: process.env.MYSQLHOST || 'localhost',
+  user: process.env.MYSQLUSER || 'root',
+  password: process.env.MYSQLPASSWORD || '',
+  database: process.env.MYSQLDATABASE || 'railway',
+  port: process.env.MYSQLPORT || 3306
 });
 
 db.connect((err) => {
