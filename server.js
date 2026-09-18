@@ -25,9 +25,14 @@ const db = mysql.createPool({
   port: process.env.MYSQLPORT || 3306
 });
 
-db.connect((err) => {
-  if (err) console.error('MySQL no disponible (el front usa localStorage):', err.message);
-  else console.log('Conectado a MySQL');
+// Verificar la conexión del pool
+db.getConnection((err, connection) => {
+  if (err) {
+    console.error('Error al conectar a MySQL/MariaDB:', err.message);
+  } else {
+    console.log('¡Conectado exitosamente a la base de datos en Railway!');
+    connection.release(); // Liberar la conexión al pool
+  }
 });
 
 function dbQuery(sql, params = []) {
