@@ -384,7 +384,7 @@ Tu rol es ayudar a vecinos y vecinas con:
 
 Respondé de forma cálida, cercana y concreta. Usá frases cortas. Podés usar algún emoji ocasionalmente. Siempre alentá la participación ciudadana. Respondé siempre en español rioplatense.`;
 
-const GEMINI_MODEL = 'gemini-1.5-flash';
+const GEMINI_MODEL = 'gemini-2.5-flash';
 
 app.post('/api/ai/chat', async (req, res) => {
   const mensaje = (req.body && req.body.mensaje || '').toString().trim().slice(0, 2000);
