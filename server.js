@@ -384,7 +384,18 @@ Tu rol es ayudar a vecinos y vecinas con:
 
 Respondé de forma cálida, cercana y concreta. Usá frases cortas. Podés usar algún emoji ocasionalmente. Siempre alentá la participación ciudadana. Respondé siempre en español rioplatense.`;
 
-const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_MODEL = 'gemini-3.8-flash';
+
+function extraerTextoDeInteraction(data) {
+  const steps = Array.isArray(data.steps) ? data.steps : [];
+  for (const step of steps) {
+    if (step.type === 'model_output' && Array.isArray(step.content)) {
+      const bloque = step.content.find((c) => c.type === 'text' && c.text);
+      if (bloque) return bloque.text;
+    }
+  }
+  return '';
+}
 
 app.post('/api/ai/chat', async (req, res) => {
   const mensaje = (req.body && req.body.mensaje || '').toString().trim().slice(0, 2000);
@@ -398,25 +409,25 @@ app.post('/api/ai/chat', async (req, res) => {
   }
 
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
-
-    const response = await fetch(url, {
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
       body: JSON.stringify({
-        system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        contents: [{ parts: [{ text: mensaje }] }]
+        model: GEMINI_MODEL,
+        input: mensaje,
+        system_instruction: SYSTEM_PROMPT,
       }),
     });
 
     const data = await response.json();
-
-    if (!response.ok || data.error) {
+    if (!response.ok) {
       console.error('Error de Gemini API:', data);
       return res.status(502).json({ error: 'El asistente no pudo responder. Probá de nuevo en un momento.' });
     }
-
-    const texto = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const texto = extraerTextoDeInteraction(data);
     res.json({ texto: texto || 'No obtuve respuesta, probá reformular tu consulta.' });
   } catch (e) {
     console.error('Fallo llamando a Gemini:', e.message);
