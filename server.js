@@ -18,11 +18,14 @@ app.use(express.json());
 app.use(express.static(__dirname));
 
 const db = mysql.createPool({
-  host: process.env.MYSQLHOST || '127.0.0.1',
-  user: process.env.MYSQLUSER || 'root',
-  password: process.env.MYSQLPASSWORD || '',
-  database: process.env.MYSQLDATABASE || 'railway',
-  port: process.env.MYSQLPORT || 3306
+  // Railway puede inyectar las variables del plugin de MySQL con distintos
+  // nombres según cómo las hayas referenciado. Probamos ambas convenciones
+  // para no depender de que coincida el nombre exacto.
+  host: process.env.MYSQLHOST || process.env.DB_HOST || '127.0.0.1',
+  user: process.env.MYSQLUSER || process.env.DB_USER || 'root',
+  password: process.env.MYSQLPASSWORD || process.env.DB_PASSWORD || '',
+  database: process.env.MYSQLDATABASE || process.env.DB_NAME || 'railway',
+  port: process.env.MYSQLPORT || process.env.DB_PORT || 3306,
 });
 
 // Verificar la conexión del pool
@@ -425,7 +428,10 @@ app.post('/api/ai/chat', async (req, res) => {
     const data = await response.json();
     if (!response.ok) {
       console.error('Error de Gemini API:', data);
-      return res.status(502).json({ error: 'El asistente no pudo responder. Probá de nuevo en un momento.' });
+      // Incluimos el motivo real (sin exponer la key) para poder diagnosticar
+      // desde la consola del navegador sin tener que ir a buscar los logs.
+      const motivo = data.error?.message || data.error?.status || 'motivo desconocido';
+      return res.status(502).json({ error: `El asistente no pudo responder (${motivo}).` });
     }
     const texto = extraerTextoDeInteraction(data);
     res.json({ texto: texto || 'No obtuve respuesta, probá reformular tu consulta.' });
