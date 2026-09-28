@@ -888,3 +888,53 @@ footer { background: var(--pizarra); padding: 3rem 2rem; text-align: center; }
   background: rgba(200,148,10,0.15); color: var(--oro);
 }
 .mod-badge.archivada { background: rgba(192,57,43,0.12); color: var(--rojo-calor); }
+
+/* ============================================
+   TRIVIA VERDE (minijuego)
+============================================ */
+#trivia { background: var(--crema); }
+.trivia-box {
+  background: var(--verde-oscuro); color: var(--crema);
+  border-radius: 4px; max-width: 720px; margin: 0 auto;
+  padding: 2rem;
+}
+.trivia-box h3 { font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.5rem; line-height: 1.3; margin-bottom: 1rem; }
+.trivia-box p { color: rgba(248, 244, 237, 0.75); font-size: 0.95rem; line-height: 1.7; margin-bottom: 1.2rem; }
+.tv-hud { display: flex; justify-content: space-between; align-items: center; font-size: 0.95rem; }
+.tv-vidas span { font-size: 1.4rem; margin-right: 2px; }
+.tv-vidas .off { opacity: 0.2; filter: grayscale(1); }
+.tv-pts b { color: var(--verde-claro); }
+.tv-pts em { font-style: normal; color: var(--oro); margin-left: 0.8rem; font-weight: 600; }
+.tv-barra { height: 6px; background: rgba(116, 198, 157, 0.2); border-radius: 99px; margin: 1rem 0 0.5rem; overflow: hidden; }
+.tv-barra i { display: block; height: 100%; width: 100%; background: var(--verde-claro); }
+.tv-barra.urgente i { background: var(--rojo-calor); }
+.tv-prog { font-size: 0.78rem; color: rgba(248, 244, 237, 0.55); margin-bottom: 0.6rem; }
+.tv-opt {
+  display: block; width: 100%; text-align: left; font: inherit; font-size: 0.98rem;
+  color: var(--crema); background: rgba(248, 244, 237, 0.06);
+  border: 1px solid rgba(116, 198, 157, 0.3); border-radius: 2px;
+  padding: 0.85rem 1rem; margin-bottom: 0.6rem; cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+.tv-opt:hover:not(:disabled) { border-color: var(--verde-claro); background: rgba(116, 198, 157, 0.14); }
+.tv-opt:disabled { cursor: default; }
+.tv-opt.ok { border-color: var(--verde-claro); background: rgba(116, 198, 157, 0.28); }
+.tv-opt.no { border-color: var(--rojo-calor); background: rgba(192, 57, 43, 0.3); }
+.tv-fb { border-left: 3px solid var(--verde-claro); padding-left: 1rem; margin: 1.2rem 0; }
+.tv-fb.no { border-color: var(--rojo-calor); }
+.tv-fb strong { display: block; margin-bottom: 0.2rem; }
+.tv-fb p { margin: 0; color: rgba(248, 244, 237, 0.85); }
+.tv-grande { font-family: 'Fraunces', serif; font-size: 3rem; font-weight: 800; color: var(--verde-claro); line-height: 1; margin: 0.4rem 0 0.8rem; }
+.tv-guardar { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
+.tv-guardar input {
+  flex: 1 1 180px; font: inherit; padding: 0.8rem 1rem; border-radius: 2px;
+  border: 1px solid rgba(116, 198, 157, 0.4); background: rgba(248, 244, 237, 0.08); color: var(--crema);
+}
+.tv-guardar input::placeholder { color: rgba(248, 244, 237, 0.45); }
+.tv-rank { margin-top: 1.5rem; padding-top: 1.2rem; border-top: 1px solid rgba(116, 198, 157, 0.2); }
+.tv-rank h4 { font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.1rem; margin-bottom: 0.6rem; }
+.tv-rank ol { padding-left: 1.3rem; }
+.tv-rank li { padding: 0.25rem 0; font-size: 0.95rem; }
+.tv-rank li span { float: right; color: var(--verde-claro); font-weight: 600; }
+.trivia-box button:focus-visible, .trivia-box input:focus-visible { outline: 3px solid var(--oro); outline-offset: 2px; }
+@media (max-width: 768px) { .trivia-box { padding: 1.4rem; } }
