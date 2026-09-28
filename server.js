@@ -1,7 +1,12 @@
 require('dotenv').config();
 
 const express = require('express');
-const mysql = require('mysql');
+// mysql2 (no el paquete viejo "mysql") — soporta el protocolo de
+// autenticación "caching_sha2_password" que usa MySQL 8 por defecto en
+// Railway. El paquete "mysql" viejo no lo entiende y tira
+// ER_NOT_SUPPORTED_AUTH_MODE. La API es la misma (createPool, query con
+// callback), así que no hace falta cambiar nada más del archivo.
+const mysql = require('mysql2');
 const cors = require('cors');
 const path = require('path');
 
