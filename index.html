@@ -19,6 +19,8 @@
       <li><a href="#mapa">Mapa</a></li>
       <li><a href="#estadisticas">Estadísticas</a></li>
       <li><a href="#propuestas">Propuestas</a></li>
+      <!-- TRIVIA: enlace en la barra -->
+      <li><a href="#trivia">Trivia</a></li>
       <li><a href="#asistente">Asistente</a></li>
     </ul>
     <div class="nav-auth" id="navAuth">
@@ -200,6 +202,19 @@
     </div>
   </section>
 
+  <!-- TRIVIA: sección del minijuego -->
+  <section id="trivia">
+    <div class="section-inner">
+      <div class="section-label">Minijuego</div>
+      <h2 class="section-title">Trivia Verde</h2>
+      <p class="section-desc">
+        Poné a prueba lo que sabés sobre reciclaje, energía, biodiversidad y espacios verdes.
+        Tenés 3 vidas y 15 segundos por pregunta. Las rachas suman puntos extra.
+      </p>
+      <div class="trivia-box" id="triviaApp" aria-live="polite"></div>
+    </div>
+  </section>
+
   <section id="asistente">
     <div class="section-inner">
       <div class="section-label">Asistente del Barrio</div>
@@ -279,5 +294,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="script.js"></script>
+  <!-- TRIVIA: script del minijuego (debe ir después de script.js) -->
+  <script src="trivia.js"></script>
 </body>
 </html>
