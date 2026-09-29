@@ -392,7 +392,7 @@ Tu rol es ayudar a vecinos y vecinas con:
 
 Respondé de forma cálida, cercana y concreta. Usá frases cortas. Podés usar algún emoji ocasionalmente. Siempre alentá la participación ciudadana. Respondé siempre en español rioplatense.`;
 
-const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_MODEL = 'gemini-3.8-flash';
 
 function extraerTextoDeInteraction(data) {
   const steps = Array.isArray(data.steps) ? data.steps : [];
@@ -551,6 +551,144 @@ app.delete('/api/mod/denuncias/:id', async (req, res) => {
   } catch (e) {
     if (e.code === 'ER_NO_SUCH_TABLE') return res.json({ ok: true });
     res.status(500).json({ error: e.message });
+  }
+});
+
+
+/* ============================================
+   TRIVIA VERDE — puntos y ranking
+   Campo: usuarios.puntos_trivia = MEJOR puntaje del usuario en la trivia.
+   La columna se crea sola al arrancar si todavía no existe, así que no
+   hace falta correr ningún ALTER a mano en una base ya creada.
+============================================ */
+const TRIVIA_MAX_PUNTOS = 2400; // 10 preguntas x 240 (máximo posible por pregunta)
+const TRIVIA_MAX_LISTA = 500;   // tope de la lista completa del ranking
+
+let columnaTriviaPromesa = null;
+function asegurarColumnaTrivia() {
+  if (!columnaTriviaPromesa) {
+    columnaTriviaPromesa = (async () => {
+      const cols = await dbQuery("SHOW COLUMNS FROM usuarios LIKE 'puntos_trivia'");
+      if (!cols.length) {
+        await dbQuery('ALTER TABLE usuarios ADD COLUMN puntos_trivia INT NOT NULL DEFAULT 0');
+        console.log('Se agregó la columna usuarios.puntos_trivia');
+      }
+    })().catch((e) => {
+      columnaTriviaPromesa = null; // reintentar en el próximo pedido
+      throw e;
+    });
+  }
+  return columnaTriviaPromesa;
+}
+asegurarColumnaTrivia().catch((e) => console.warn('Trivia: no se pudo verificar la columna puntos_trivia:', e.message));
+
+/** Igual que en votar/denunciar: identifica al usuario por id, email o google_id. */
+async function resolverUsuarioId(datos) {
+  const { usuario_id, email, google_id } = datos || {};
+  if (email || google_id) {
+    const u = await dbQuery('SELECT id FROM usuarios WHERE email = ? OR google_id = ? LIMIT 1', [
+      email || null,
+      google_id || null,
+    ]);
+    if (u.length) return u[0].id;
+  }
+  if (usuario_id) {
+    const idTxt = String(usuario_id);
+    const porId = /^\d{1,9}$/.test(idTxt);
+    const u = porId
+      ? await dbQuery('SELECT id FROM usuarios WHERE id = ? OR google_id = ? LIMIT 1', [Number(idTxt), idTxt])
+      : await dbQuery('SELECT id FROM usuarios WHERE google_id = ? LIMIT 1', [idTxt]);
+    if (u.length) return u[0].id;
+  }
+  return null;
+}
+
+/** Puesto de un puntaje: 1 + cantidad de jugadores con MÁS puntos (los empates comparten puesto). */
+async function puestoDe(puntos) {
+  const r = await dbQuery('SELECT COUNT(*) + 1 AS posicion FROM usuarios WHERE puntos_trivia > ?', [puntos]);
+  const t = await dbQuery('SELECT COUNT(*) AS n FROM usuarios WHERE puntos_trivia > 0');
+  return { posicion: Number(r[0].posicion), total: Number(t[0].n) };
+}
+
+function errorTrivia(res, e) {
+  if (e.code === 'ECONNREFUSED' || String(e.message).includes('not available')) {
+    return res.status(503).json({ error: 'Base de datos no disponible' });
+  }
+  return res.status(500).json({ error: e.message });
+}
+
+// Ranking: top N (limite=5 por defecto) o lista completa (limite=todos)
+app.get('/api/trivia/ranking', async (req, res) => {
+  try {
+    await asegurarColumnaTrivia();
+    const limite =
+      req.query.limite === 'todos'
+        ? TRIVIA_MAX_LISTA
+        : Math.min(Math.max(parseInt(req.query.limite, 10) || 5, 1), TRIVIA_MAX_LISTA);
+    const uid = await resolverUsuarioId(req.query);
+
+    const filas = await dbQuery(
+      `SELECT id, nombre, puntos_trivia AS puntos
+       FROM usuarios
+       WHERE puntos_trivia > 0
+       ORDER BY puntos_trivia DESC, fecha_registro ASC, id ASC
+       LIMIT ?`,
+      [limite]
+    );
+    let pos = 0;
+    let previo = null;
+    const ranking = filas.map((f, i) => {
+      if (f.puntos !== previo) { pos = i + 1; previo = f.puntos; }
+      return { posicion: pos, nombre: f.nombre, puntos: f.puntos, tu: uid != null && f.id === uid };
+    });
+
+    const t = await dbQuery('SELECT COUNT(*) AS n FROM usuarios WHERE puntos_trivia > 0');
+    let mio = null;
+    if (uid != null) {
+      const m = await dbQuery('SELECT puntos_trivia AS puntos FROM usuarios WHERE id = ?', [uid]);
+      if (m.length && m[0].puntos > 0) {
+        mio = { puntos: m[0].puntos, posicion: (await puestoDe(m[0].puntos)).posicion };
+      }
+    }
+    res.json({ total: Number(t[0].n), ranking, mio });
+  } catch (e) {
+    errorTrivia(res, e);
+  }
+});
+
+// Puesto que ocuparía un puntaje (sirve también para quien no inició sesión)
+app.get('/api/trivia/posicion', async (req, res) => {
+  const puntos = Number(req.query.puntos);
+  if (!Number.isInteger(puntos) || puntos < 0 || puntos > TRIVIA_MAX_PUNTOS) {
+    return res.status(400).json({ error: 'Puntos inválidos' });
+  }
+  try {
+    await asegurarColumnaTrivia();
+    res.json(await puestoDe(puntos));
+  } catch (e) {
+    errorTrivia(res, e);
+  }
+});
+
+// Guardar los puntos de una partida (se conserva el MEJOR puntaje)
+app.post('/api/trivia/puntos', async (req, res) => {
+  const puntos = Number(req.body && req.body.puntos);
+  if (!Number.isInteger(puntos) || puntos < 0 || puntos > TRIVIA_MAX_PUNTOS) {
+    return res.status(400).json({ error: 'Puntos inválidos' });
+  }
+  try {
+    await asegurarColumnaTrivia();
+    const uid = await resolverUsuarioId(req.body);
+    if (uid == null) return res.status(401).json({ error: 'Ingresá con tu cuenta para guardar tus puntos' });
+
+    const antes = await dbQuery('SELECT puntos_trivia AS puntos FROM usuarios WHERE id = ?', [uid]);
+    const previo = antes.length ? antes[0].puntos : 0;
+    await dbQuery('UPDATE usuarios SET puntos_trivia = GREATEST(puntos_trivia, ?) WHERE id = ?', [puntos, uid]);
+    const mejor = Math.max(previo, puntos);
+    const { posicion, total } = await puestoDe(mejor);
+    res.json({ mejor, mejorado: puntos > previo, posicion, total });
+  } catch (e) {
+    errorTrivia(res, e);
   }
 });
 
