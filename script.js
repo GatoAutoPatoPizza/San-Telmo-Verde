@@ -904,6 +904,7 @@ function onMapClick(e) {
   clearMarcadorTemporal();
   Store.marcadorTemporal = L.marker([lat, lng], { icon: crearIcono('prop', '★') }).addTo(Store.mapa);
   cancelarModoUbicacion();
+  mostrarVista('propuestas'); // volvemos al formulario con la ubicación ya cargada
 }
 
 function activarModoUbicacion() {
@@ -914,7 +915,7 @@ function activarModoUbicacion() {
   Store.modoUbicacion = true;
   document.getElementById('modoUbicacionBanner')?.classList.remove('hidden');
   document.getElementById('map')?.classList.add('cursor-crosshair');
-  document.getElementById('mapa')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  mostrarVista('mapa');
 }
 
 function cancelarModoUbicacion() {
@@ -1109,14 +1110,107 @@ function animarBarrasAlEntrar() {
   observer.observe(seccionStats);
 }
 
-function activarScrollSuave() {
-  document.querySelectorAll('a[href^="#"]').forEach((link) => {
-    link.addEventListener('click', (e) => {
-      e.preventDefault();
-      const destino = document.querySelector(link.getAttribute('href'));
-      if (destino) destino.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
+// ——— Navegación por vistas + menú hamburguesa ———
+// Cada sección es una "pantalla" (clase .vista). Se navega con el hash de la
+// URL (#mapa, #propuestas...), así funcionan los links, el botón "atrás" y
+// se puede compartir el link directo a una sección.
+const VISTAS = ['inicio', 'mapa', 'estadisticas', 'propuestas', 'asistente', 'integrantes'];
+
+function aplicarVista(id) {
+  if (!VISTAS.includes(id)) id = 'inicio';
+  document.querySelectorAll('main .vista').forEach((v) => v.classList.toggle('activa', v.id === id));
+  document.querySelectorAll('#menuLateral [data-vista]').forEach((a) => {
+    const activo = a.dataset.vista === id;
+    a.classList.toggle('activo', activo);
+    if (activo) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
+  window.scrollTo(0, 0);
+  cerrarMenu();
+  // Leaflet calcula mal su tamaño si el mapa estaba oculto al crearse
+  if (id === 'mapa' && Store.mapa) setTimeout(() => Store.mapa.invalidateSize(), 60);
+}
+
+function mostrarVista(id) {
+  if (location.hash === '#' + id) aplicarVista(id);
+  else location.hash = id; // dispara "hashchange" -> aplicarVista
+}
+
+function abrirMenu() {
+  document.getElementById('menuLateral')?.classList.add('abierto');
+  document.getElementById('drawerBackdrop')?.classList.add('abierto');
+  const btn = document.getElementById('btnHamburguesa');
+  btn?.setAttribute('aria-expanded', 'true');
+  btn?.setAttribute('aria-label', 'Cerrar menú');
+}
+
+function cerrarMenu() {
+  document.getElementById('menuLateral')?.classList.remove('abierto');
+  document.getElementById('drawerBackdrop')?.classList.remove('abierto');
+  const btn = document.getElementById('btnHamburguesa');
+  btn?.setAttribute('aria-expanded', 'false');
+  btn?.setAttribute('aria-label', 'Abrir menú');
+}
+
+function activarNavegacion() {
+  const btn = document.getElementById('btnHamburguesa');
+  btn?.addEventListener('click', () => {
+    btn.getAttribute('aria-expanded') === 'true' ? cerrarMenu() : abrirMenu();
+  });
+  document.getElementById('drawerBackdrop')?.addEventListener('click', cerrarMenu);
+  document.getElementById('menuLateral')?.addEventListener('click', (e) => {
+    if (e.target.closest('a')) cerrarMenu();
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cerrarMenu(); });
+  window.addEventListener('hashchange', () => aplicarVista(location.hash.slice(1)));
+  aplicarVista(location.hash.slice(1));
+}
+
+// ——— Integrantes del grupo ———
+// EDITÁ ESTA LISTA: una línea por integrante. "foto" es opcional
+// (ej: 'fotos/juan.jpg'); si la dejás vacía se muestran las iniciales.
+const INTEGRANTES = [
+  { nombre: 'Gil Mendive Ramiro', rol: 'convertir a app la pagina / 4°2 computacion' },
+  { nombre: 'Laxi Maximo Segundo', rol: 'Optimizar la pagina / 4°2 computacion' },
+  { nombre: 'Villa Godoy Thiago', rol: 'Optimizar la pagina/ 4°2 computacion ' },
+  { nombre: 'Mailen Mammani', rol: 'Creacion del canva y video para el proyecto / 4°2 computacion' },
+  { nombre: 'Antonella Vivacqua', rol: 'Ayudante para la pagina y desarrolladora principal en aerohack / 6°2 computacion' },
+  { nombre: 'Madai Mariela Andacaba', rol: 'Ayudante para la pagina y desarrolladora principal en aerohack / 6°2 computacion' },
+];
+
+function renderIntegrantes() {
+  const grid = document.getElementById('integrantesGrid');
+  if (!grid) return;
+  grid.textContent = '';
+  INTEGRANTES.forEach((i) => {
+    const card = document.createElement('div');
+    card.className = 'integrante-card';
+
+    const avatar = document.createElement('div');
+    avatar.className = 'integrante-avatar';
+    if (i.foto) {
+      const img = document.createElement('img');
+      img.src = i.foto;
+      img.alt = i.nombre;
+      img.onerror = () => { avatar.textContent = iniciales(i.nombre); };
+      avatar.appendChild(img);
+    } else {
+      avatar.textContent = iniciales(i.nombre);
+    }
+
+    const nombre = document.createElement('div');
+    nombre.className = 'integrante-nombre';
+    nombre.textContent = i.nombre;
+    const rol = document.createElement('div');
+    rol.className = 'integrante-rol';
+    rol.textContent = i.rol;
+
+    card.append(avatar, nombre, rol);
+    grid.appendChild(card);
+  });
+}
+
+function iniciales(nombre) {
+  return String(nombre).trim().split(/\s+/).slice(0, 2).map((p) => p[0] || '').join('').toUpperCase() || '?';
 }
 
 // El prompt del asistente ahora vive en server.js (junto con la API key),
@@ -1194,10 +1288,11 @@ async function intentarCargarDesdeAPI() {
 }
 
 async function init() {
+  activarNavegacion(); // primero el menú, así anda aunque falle el mapa
+  renderIntegrantes();
   hydrateStore();
   inicializarMapa();
   animarBarrasAlEntrar();
-  activarScrollSuave();
   document.getElementById('modalLogin')?.addEventListener('click', (e) => {
     if (e.target.id === 'modalLogin') cerrarModalLogin();
   });
