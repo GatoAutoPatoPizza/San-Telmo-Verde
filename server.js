@@ -392,7 +392,7 @@ Tu rol es ayudar a vecinos y vecinas con:
 
 Respondé de forma cálida, cercana y concreta. Usá frases cortas. Podés usar algún emoji ocasionalmente. Siempre alentá la participación ciudadana. Respondé siempre en español rioplatense.`;
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
 // Modelo de respaldo si el principal está saturado (error 503/429)
 const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.1-flash-lite';
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
