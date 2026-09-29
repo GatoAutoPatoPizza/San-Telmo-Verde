@@ -1174,6 +1174,7 @@ const INTEGRANTES = [
   { nombre: 'Mammani Maylen', rol: 'Creacion de videos y resumen de la pagina / 4°2 computacion', foto: '' },
   { nombre: 'Madai Mariela Andacaba', rol: 'desarrolladora original de la pagina y participante antigua en aerohack / 6°2 computacion', foto: '' },
   { nombre: 'Antonella Vivacqua', rol: ' desarrolladora original de la pagina y participante antigua en aerohack/ 6°2 computacion', foto: '' },
+  { nombre: 'Villa Godoy Thiago', rol: 'Optimizacion de la pagina / 4°2 computacion', foto: '' },
 ];
 
 function renderIntegrantes() {
