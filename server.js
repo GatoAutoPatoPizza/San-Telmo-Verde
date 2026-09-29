@@ -393,6 +393,38 @@ Tu rol es ayudar a vecinos y vecinas con:
 Respondé de forma cálida, cercana y concreta. Usá frases cortas. Podés usar algún emoji ocasionalmente. Siempre alentá la participación ciudadana. Respondé siempre en español rioplatense.`;
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+// Modelo de respaldo si el principal está saturado (error 503/429)
+const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.1-flash-lite';
+const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Llama a Gemini; reintenta ante saturación y prueba el modelo de respaldo.
+async function llamarGemini(apiKey, mensaje) {
+  const modelos = [GEMINI_MODEL, GEMINI_FALLBACK_MODEL].filter((m, i, a) => m && a.indexOf(m) === i);
+  let ultimo = { ok: false, status: 0, data: {} };
+  for (const modelo of modelos) {
+    for (let intento = 0; intento < 3; intento++) {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+            contents: [{ role: 'user', parts: [{ text: mensaje }] }],
+          }),
+        }
+      );
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) return { ok: true, status: 200, data };
+      ultimo = { ok: false, status: response.status, data };
+      console.error(`Gemini ${modelo} intento ${intento + 1}:`, response.status, data.error?.message);
+      // Solo reintentamos si es saturación/error temporal
+      if (![429, 500, 503, 504].includes(response.status)) return ultimo;
+      await esperar(700 * (intento + 1));
+    }
+  }
+  return ultimo;
+}
 
 app.post('/api/ai/chat', async (req, res) => {
   const mensaje = (req.body && req.body.mensaje || '').toString().trim().slice(0, 2000);
@@ -406,26 +438,8 @@ app.post('/api/ai/chat', async (req, res) => {
   }
 
   try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': apiKey,
-        },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-          contents: [{ role: 'user', parts: [{ text: mensaje }] }],
-        }),
-      }
-    );
-
-    const data = await response.json();
-    if (!response.ok) {
-      console.error('Error de Gemini API:', data);
-      // Incluimos el motivo real (sin exponer la key) para poder diagnosticar
-      // desde la consola del navegador sin tener que ir a buscar los logs.
+    const { ok, data } = await llamarGemini(apiKey, mensaje);
+    if (!ok) {
       const motivo = data.error?.message || data.error?.status || 'motivo desconocido';
       return res.status(502).json({ error: `El asistente no pudo responder (${motivo}).` });
     }
