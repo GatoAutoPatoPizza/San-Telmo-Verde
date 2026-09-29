@@ -1169,12 +1169,11 @@ function activarNavegacion() {
 // EDITÁ ESTA LISTA: una línea por integrante. "foto" es opcional
 // (ej: 'fotos/juan.jpg'); si la dejás vacía se muestran las iniciales.
 const INTEGRANTES = [
-  { nombre: 'Gil Mendive Ramiro', rol: 'convertir a app la pagina / 4°2 computacion' },
-  { nombre: 'Laxi Maximo Segundo', rol: 'Optimizar la pagina / 4°2 computacion' },
-  { nombre: 'Villa Godoy Thiago', rol: 'Optimizar la pagina/ 4°2 computacion ' },
-  { nombre: 'Mailen Mammani', rol: 'Creacion del canva y video para el proyecto / 4°2 computacion' },
-  { nombre: 'Antonella Vivacqua', rol: 'Ayudante para la pagina y desarrolladora principal en aerohack / 6°2 computacion' },
-  { nombre: 'Madai Mariela Andacaba', rol: 'Ayudante para la pagina y desarrolladora principal en aerohack / 6°2 computacion' },
+  { nombre: 'Gil Mendive Ramiro', rol: 'Optimizacion de la pagina / 4°2 computacion' },
+  { nombre: 'Laxi Maximo Segundo', rol: 'Optimizacion de la pagina / 4°2 computacion' },
+  { nombre: 'Mammani Maylen', rol: 'Creacion de videos y resumen de la pagina / 4°2 computacion', foto: '' },
+  { nombre: 'Madai Mariela Andacaba', rol: 'desarrolladora original de la pagina y participante antigua en aerohack / 6°2 computacion', foto: '' },
+  { nombre: 'Antonella Vivacqua', rol: ' desarrolladora original de la pagina y participante antigua en aerohack/ 6°2 computacion', foto: '' },
 ];
 
 function renderIntegrantes() {
