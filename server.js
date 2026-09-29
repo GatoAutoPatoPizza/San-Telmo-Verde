@@ -392,18 +392,7 @@ Tu rol es ayudar a vecinos y vecinas con:
 
 Respondé de forma cálida, cercana y concreta. Usá frases cortas. Podés usar algún emoji ocasionalmente. Siempre alentá la participación ciudadana. Respondé siempre en español rioplatense.`;
 
-const GEMINI_MODEL = 'gemini-2.5-flash';
-
-function extraerTextoDeInteraction(data) {
-  const steps = Array.isArray(data.steps) ? data.steps : [];
-  for (const step of steps) {
-    if (step.type === 'model_output' && Array.isArray(step.content)) {
-      const bloque = step.content.find((c) => c.type === 'text' && c.text);
-      if (bloque) return bloque.text;
-    }
-  }
-  return '';
-}
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
 app.post('/api/ai/chat', async (req, res) => {
   const mensaje = (req.body && req.body.mensaje || '').toString().trim().slice(0, 2000);
@@ -417,18 +406,20 @@ app.post('/api/ai/chat', async (req, res) => {
   }
 
   try {
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
-      },
-      body: JSON.stringify({
-        model: GEMINI_MODEL,
-        input: mensaje,
-        system_instruction: SYSTEM_PROMPT,
-      }),
-    });
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
+        },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          contents: [{ role: 'user', parts: [{ text: mensaje }] }],
+        }),
+      }
+    );
 
     const data = await response.json();
     if (!response.ok) {
@@ -438,7 +429,10 @@ app.post('/api/ai/chat', async (req, res) => {
       const motivo = data.error?.message || data.error?.status || 'motivo desconocido';
       return res.status(502).json({ error: `El asistente no pudo responder (${motivo}).` });
     }
-    const texto = extraerTextoDeInteraction(data);
+    const texto = (data.candidates?.[0]?.content?.parts || [])
+      .map((p) => p.text || '')
+      .join('')
+      .trim();
     res.json({ texto: texto || 'No obtuve respuesta, probá reformular tu consulta.' });
   } catch (e) {
     console.error('Fallo llamando a Gemini:', e.message);
