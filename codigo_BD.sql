@@ -96,7 +96,8 @@ CREATE TABLE `usuarios` (
   `nombre` varchar(100) NOT NULL,
   `email` varchar(150) NOT NULL,
   `google_id` varchar(255) DEFAULT NULL,
-  `fecha_registro` timestamp NOT NULL DEFAULT current_timestamp()
+  `fecha_registro` timestamp NOT NULL DEFAULT current_timestamp(),
+  `puntos_trivia` int(11) NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
