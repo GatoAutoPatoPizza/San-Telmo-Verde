@@ -7,7 +7,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;0,600;0,800;1,300&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
       integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=3">
   <!-- Google Identity Services (login real) -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <link rel="icon" type="image/png" href="logo.png">
@@ -19,8 +19,7 @@
       <li><a href="#mapa">Mapa</a></li>
       <li><a href="#estadisticas">Estadísticas</a></li>
       <li><a href="#propuestas">Propuestas</a></li>
-      <!-- TRIVIA: enlace en la barra -->
-      <li><a href="#trivia">Trivia</a></li>
+      <li><a href="#trivia" id="navTrivia">Trivia</a></li>
       <li><a href="#asistente">Asistente</a></li>
     </ul>
     <div class="nav-auth" id="navAuth">
@@ -202,19 +201,6 @@
     </div>
   </section>
 
-  <!-- TRIVIA: sección del minijuego -->
-  <section id="trivia">
-    <div class="section-inner">
-      <div class="section-label">Minijuego</div>
-      <h2 class="section-title">Trivia Verde</h2>
-      <p class="section-desc">
-        Poné a prueba lo que sabés sobre reciclaje, energía, biodiversidad y espacios verdes.
-        Tenés 3 vidas y 15 segundos por pregunta. Las rachas suman puntos extra.
-      </p>
-      <div class="trivia-box" id="triviaApp" aria-live="polite"></div>
-    </div>
-  </section>
-
   <section id="asistente">
     <div class="section-inner">
       <div class="section-label">Asistente del Barrio</div>
@@ -291,10 +277,22 @@
     </div>
   </div>
 
+  <!-- TRIVIA: ventana emergente del minijuego -->
+  <div class="modal-overlay" id="modalTrivia">
+    <div class="modal-box modal-trivia" role="dialog" aria-modal="true" aria-labelledby="triviaTitulo">
+      <div class="modal-header">
+        <h3 id="triviaTitulo">Trivia Verde</h3>
+        <button type="button" class="modal-close-btn" id="triviaCerrar" aria-label="Cerrar trivia">×</button>
+      </div>
+      <div class="trivia-body" id="triviaApp" aria-live="polite"></div>
+    </div>
+  </div>
+  <!-- Acceso a la trivia en celulares (el menú del encabezado se oculta en pantallas chicas) -->
+  <button type="button" class="trivia-fab" id="triviaFab">🌿 Trivia</button>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="script.js"></script>
-  <!-- TRIVIA: script del minijuego (debe ir después de script.js) -->
   <script src="trivia.js"></script>
 </body>
 </html>
