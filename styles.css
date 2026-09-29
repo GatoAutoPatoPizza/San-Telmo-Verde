@@ -1063,3 +1063,23 @@ main .vista:not(#inicio) { min-height: 75vh; }
 @media (prefers-reduced-motion: reduce) {
   .drawer, .drawer-backdrop, .hamburger span, main .vista.activa { transition: none; animation: none; }
 }
+
+
+/* Ajustes de integración para el menú y la sección de integrantes */
+.nav-left { display: flex; align-items: center; gap: 0.9rem; min-width: 0; }
+.nav-logo { text-decoration: none; white-space: nowrap; }
+.hamburger { flex: 0 0 42px; }
+#integrantes, #mapa, #estadisticas, #propuestas, #asistente, #inicio { scroll-margin-top: 76px; }
+@media (max-width: 900px) {
+  nav { padding: 0 1rem; gap: 1rem; }
+  .nav-links { gap: 0.8rem; }
+  .nav-links a { font-size: 0.7rem; }
+}
+@media (max-width: 680px) {
+  nav { justify-content: flex-start; }
+  .nav-links { display: none; }
+  .nav-left { gap: 0.7rem; }
+  .nav-logo { font-size: 1.05rem; }
+  .nav-auth { margin-left: auto; }
+  #integrantes .section-inner { padding-left: 1rem; padding-right: 1rem; }
+}
