@@ -29,7 +29,17 @@
     { q: '¿Cuándo se celebra el Día Mundial del Medio Ambiente?', a: ['5 de junio', '22 de abril', '21 de marzo', '1 de enero'], e: 'Es el 5 de junio. El 22 de abril es el Día de la Tierra.' },
     { q: '¿Cuántos m² de espacio verde por habitante recomienda la OMS?', a: ['9 m²', '2 m²', '20 m²', '50 m²'], e: 'San Telmo tiene apenas 1,8 m² por habitante, muy lejos de esa meta.' },
     { q: '¿Qué es una isla de calor urbana?', a: ['Una zona de la ciudad más caliente que su entorno por el cemento y la falta de árboles', 'Un parque con clima tropical', 'Una isla en el Río de la Plata', 'Un techo con paneles solares'], e: 'El asfalto y el cemento acumulan calor, mientras que los árboles dan sombra y refrescan el aire.' },
-    { q: '¿Qué es una plaza de bolsillo?', a: ['Un espacio verde pequeño en un terreno reducido de la ciudad', 'Una plaza que solo abre de noche', 'Una plaza sin árboles', 'Un estacionamiento con macetas'], e: 'Son plazas chicas que transforman lotes vacíos o esquinas en lugares de encuentro con verde.' }
+    { q: '¿Qué es una plaza de bolsillo?', a: ['Un espacio verde pequeño en un terreno reducido de la ciudad', 'Una plaza que solo abre de noche', 'Una plaza sin árboles', 'Un estacionamiento con macetas'], e: 'Son plazas chicas que transforman lotes vacíos o esquinas en lugares de encuentro con verde.' },
+    { q: '¿Cuál de estos materiales tarda más en degradarse?', a: ['El telgopor (poliestireno expandido)', 'Una cáscara de banana', 'Una hoja de papel sin recubrimiento', 'Un resto de poda'], e: 'El telgopor puede tardar cientos de años y encima se rompe en pedacitos que contaminan más.' },
+    { q: '¿Qué significa la "regla de las 3R" del cuidado ambiental?', a: ['Reducir, Reutilizar, Reciclar', 'Reducir, Reparar, Renovar', 'Reciclar, Remover, Reponer', 'Reutilizar, Rebajar, Renovar'], e: 'En ese orden de prioridad: primero generar menos residuos, después darles una segunda vida, y recién al final reciclar.' },
+    { q: 'De estos dos gases de efecto invernadero, ¿cuál es más potente por molécula aunque dura menos tiempo en la atmósfera?', a: ['El metano (CH₄)', 'El dióxido de carbono (CO₂)', 'El oxígeno', 'El nitrógeno'], e: 'El metano atrapa mucho más calor por molécula que el CO₂, pero se degrada en la atmósfera en décadas en vez de siglos.' },
+    { q: '¿Qué problema ambiental causa principalmente el agujero en la capa de ozono?', a: ['Deja pasar más radiación ultravioleta dañina', 'Es la causa principal del calentamiento global', 'Produce lluvia ácida', 'Contamina las napas de agua'], e: 'Es un error común: el agujero de ozono y el calentamiento global son dos problemas distintos, con causas diferentes.' },
+    { q: '¿Qué día se conmemora el "Día de la Tierra"?', a: ['22 de abril', '5 de junio', '16 de septiembre', '1 de junio'], e: 'El 5 de junio es el Día Mundial del Medio Ambiente, y el 16 de septiembre es el Día de la Capa de Ozono: son fechas distintas.' },
+    { q: '¿Qué número lleva el triángulo de reciclaje en una botella de gaseosa común (PET)?', a: ['1', '2', '5', '7'], e: 'El PET es el plástico número 1. Cada número indica un tipo de resina distinto, no todos se reciclan igual.' },
+    { q: '¿Cuál de estas acciones ahorra más agua en una casa?', a: ['Cerrar la canilla mientras te cepillás los dientes', 'Dejar la canilla abierta mientras enjabonás los platos', 'Regar las plantas al mediodía', 'Llenar la bañera hasta el tope'], e: 'Parece un gesto chico, pero una canilla abierta sin necesidad puede gastar varios litros por minuto.' },
+    { q: 'Aproximadamente, ¿cuánta agua hace falta para producir 1 kg de carne vacuna (su "huella hídrica")?', a: ['Más de 15.000 litros', 'Unos 500 litros', 'Unos 50 litros', 'Unos 2.000 litros'], e: 'La ganadería es una de las actividades que más agua consume de forma indirecta, por el agua usada para producir el alimento del animal.' },
+    { q: 'Al viajar solo, ¿qué medio de transporte emite menos CO₂ por pasajero frente al auto particular?', a: ['El tren o subte eléctrico', 'La moto', 'El taxi', 'El auto compartido con una sola persona'], e: 'El transporte eléctrico de alta capacidad reparte la energía entre muchos pasajeros a la vez, lo que baja mucho la emisión por persona.' },
+    { q: '¿De dónde proviene gran parte de los microplásticos que terminan en el mar?', a: ['Del lavado de ropa sintética y la degradación de plásticos más grandes', 'Exclusivamente de los barcos pesqueros', 'De erupciones volcánicas', 'De la lluvia ácida'], e: 'Cada lavado de ropa sintética libera fibras microscópicas que las plantas de tratamiento no siempre logran filtrar.' }
   ];
 
   const modal = document.getElementById('modalTrivia');
@@ -40,6 +50,32 @@
   let timer = null;
   let ultimoFoco = null;     // para devolver el foco al cerrar
   let refrescarFin = null;   // se llama si el usuario inicia/cierra sesión en la pantalla final
+
+  // Colores del tema (coinciden con las variables CSS --verde-claro/--oro/--rojo-calor)
+  const COLOR_VERDE = [116, 198, 157];
+  const COLOR_AMARILLO = [200, 148, 10];
+  const COLOR_ROJO = [192, 57, 43];
+
+  function mezclar(c1, c2, t) {
+    return c1.map((v, i) => Math.round(v + (c2[i] - v) * t));
+  }
+
+  // frac: 1 = tiempo lleno (verde) → 0.5 = mitad (amarillo) → 0 = se acaba (rojo)
+  function colorBarra(frac) {
+    const f = Math.max(0, Math.min(1, frac));
+    const [r, g, b] = f >= 0.5
+      ? mezclar(COLOR_AMARILLO, COLOR_VERDE, (f - 0.5) * 2)
+      : mezclar(COLOR_ROJO, COLOR_AMARILLO, f * 2);
+    return `rgb(${r}, ${g}, ${b})`;
+  }
+
+  // Convierte segundos a "m:ss" para mostrar el tiempo total de una partida
+  function formatoTiempo(segundos) {
+    const s = Math.max(0, Math.round(segundos));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return m + ':' + String(r).padStart(2, '0');
+  }
 
   const shuffle = (arr) => {
     for (let i = arr.length - 1; i > 0; i--) {
@@ -112,7 +148,7 @@
           li.append(
             el('span', 'pos', '#' + r.posicion),
             el('span', 'nom', r.nombre + (r.tu ? ' (vos)' : '')),
-            el('span', 'pts', r.puntos + ' pts')
+            el('span', 'pts', r.puntos + ' pts · ' + formatoTiempo(r.tiempo))
           );
           ol.appendChild(li);
         });
@@ -120,7 +156,7 @@
         lista.appendChild(ol);
         wrap.appendChild(lista);
 
-        if (d.mio) wrap.appendChild(el('p', 'tv-nota', 'Tu mejor puntaje: ' + d.mio.puntos + ' pts · puesto #' + d.mio.posicion));
+        if (d.mio) wrap.appendChild(el('p', 'tv-nota', 'Tu mejor puntaje: ' + d.mio.puntos + ' pts · ' + formatoTiempo(d.mio.tiempo) + ' · puesto #' + d.mio.posicion));
         if (d.total > 5) {
           wrap.appendChild(btn(verTodos ? 'Ver menos' : 'Ver más', () => { verTodos = !verTodos; pintar(); }, 'btn-outline1 tv-vermas'));
         }
@@ -150,7 +186,21 @@
 
   function empezar() {
     refrescarFin = null;
-    S = { qs: shuffle(PREGUNTAS.slice()).slice(0, POR_PARTIDA), i: 0, vidas: VIDAS, puntos: 0, racha: 0, maxRacha: 0, bloqueado: false, terminada: false, t0: 0, opts: [] };
+    S = {
+      qs: shuffle(PREGUNTAS.slice()).slice(0, POR_PARTIDA),
+      i: 0,
+      vidas: VIDAS,
+      puntos: 0,
+      racha: 0,
+      maxRacha: 0,
+      bloqueado: false,
+      terminada: false,
+      t0: 0,
+      inicioPartida: Date.now(), // para medir el tiempo TOTAL de la partida
+      tiempoTotal: 0,
+      bonoVelocidad: 0,
+      opts: [],
+    };
     preguntar();
   }
 
@@ -197,8 +247,9 @@
     timer = setInterval(() => {
       if (!S) return;
       const resta = TIEMPO - (Date.now() - S.t0) / 1000;
-      fill.style.width = Math.max(resta, 0) / TIEMPO * 100 + '%';
-      barra.classList.toggle('urgente', resta <= 5);
+      const frac = Math.max(resta, 0) / TIEMPO;
+      fill.style.width = frac * 100 + '%';
+      fill.style.background = colorBarra(frac);
       if (resta <= 0) responder(-1);
     }, 100);
   }
@@ -249,13 +300,29 @@
     S.terminada = true;
     const gano = S.vidas > 0;
     const respondidas = S.i + (gano ? 1 : 0);
+
+    // Tiempo total de la partida, desde que arrancó hasta que terminó.
+    S.tiempoTotal = (Date.now() - S.inicioPartida) / 1000;
+
+    // Bono de velocidad: compara el tiempo que tardaste contra el "presupuesto"
+    // de tiempo disponible para las preguntas que realmente respondiste
+    // (respondidas * TIEMPO). Cuanto más rápido respecto a ese presupuesto,
+    // más puntos extra — sin castigar a quien perdió antes de terminar.
+    const presupuesto = Math.max(respondidas, 1) * TIEMPO;
+    S.bonoVelocidad = Math.max(0, Math.round((presupuesto - S.tiempoTotal) * 2));
+    S.puntos += S.bonoVelocidad;
+
     const puntos = S.puntos;
+    const tiempoTotal = S.tiempoTotal;
     let guardado = null; // respuesta del servidor luego de guardar
 
     root.replaceChildren();
     root.appendChild(el('h3', '', gano ? '¡Completaste la trivia!' : 'Te quedaste sin vidas'));
     root.appendChild(el('div', 'tv-grande', puntos + ' pts'));
-    root.appendChild(el('p', '', 'Respondiste ' + respondidas + ' de ' + S.qs.length + ' preguntas. Mejor racha: ' + S.maxRacha + '.'));
+    root.appendChild(el('p', '', 'Respondiste ' + respondidas + ' de ' + S.qs.length + ' preguntas. Mejor racha: ' + S.maxRacha + '. Tiempo total: ' + formatoTiempo(tiempoTotal) + '.'));
+    if (S.bonoVelocidad > 0) {
+      root.appendChild(el('p', 'tv-ok', '¡Bono de velocidad! +' + S.bonoVelocidad + ' pts por responder rápido.'));
+    }
 
     const cajaPuesto = el('div', 'tv-posicion');
     const zonaGuardar = el('div', 'tv-guardar');
@@ -272,7 +339,7 @@
       if (guardado) {
         cajaPuesto.replaceChildren(
           el('strong', '', 'Quedaste en el puesto #' + guardado.posicion + ' de ' + guardado.total),
-          el('span', '', 'Con tu mejor puntaje: ' + guardado.mejor + ' pts.')
+          el('span', '', 'Con tu mejor puntaje: ' + guardado.mejor + ' pts · ' + formatoTiempo(guardado.mejorTiempo) + '.')
         );
         return;
       }
@@ -294,8 +361,8 @@
       if (puntos <= 0) return;
       if (guardado) {
         zonaGuardar.appendChild(el('p', 'tv-ok', guardado.mejorado
-          ? '¡Puntos guardados! Es tu nuevo mejor puntaje.'
-          : 'Puntos recibidos. Tu mejor puntaje sigue siendo ' + guardado.mejor + ' pts.'));
+          ? '¡Puntos guardados! Es tu nuevo mejor puntaje, en ' + formatoTiempo(guardado.mejorTiempo) + '.'
+          : 'Puntos recibidos. Tu mejor puntaje sigue siendo ' + guardado.mejor + ' pts (' + formatoTiempo(guardado.mejorTiempo) + ').'));
         return;
       }
       const u = usuarioActual();
@@ -313,7 +380,7 @@
           guardado = await api('/api/trivia/puntos', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(Object.assign({ puntos }, identidad()))
+            body: JSON.stringify(Object.assign({ puntos, tiempo: Math.round(tiempoTotal) }, identidad()))
           });
           pintarGuardar();
           pintarPuesto();

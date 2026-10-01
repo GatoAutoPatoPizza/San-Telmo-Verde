@@ -581,6 +581,15 @@ function asegurarColumnaTrivia() {
         await dbQuery('ALTER TABLE usuarios ADD COLUMN puntos_trivia INT NOT NULL DEFAULT 0');
         console.log('Se agregó la columna usuarios.puntos_trivia');
       }
+      // tiempo_trivia = segundos totales tardados en la partida que logró el
+      // mejor puntaje (puntos_trivia). Se actualiza junto con el puntaje,
+      // nunca por separado, para que ambos valores siempre correspondan a
+      // la misma partida.
+      const colsTiempo = await dbQuery("SHOW COLUMNS FROM usuarios LIKE 'tiempo_trivia'");
+      if (!colsTiempo.length) {
+        await dbQuery('ALTER TABLE usuarios ADD COLUMN tiempo_trivia INT NOT NULL DEFAULT 0');
+        console.log('Se agregó la columna usuarios.tiempo_trivia');
+      }
     })().catch((e) => {
       columnaTriviaPromesa = null; // reintentar en el próximo pedido
       throw e;
@@ -636,7 +645,7 @@ app.get('/api/trivia/ranking', async (req, res) => {
     const uid = await resolverUsuarioId(req.query);
 
     const filas = await dbQuery(
-      `SELECT id, nombre, puntos_trivia AS puntos
+      `SELECT id, nombre, puntos_trivia AS puntos, tiempo_trivia AS tiempo
        FROM usuarios
        WHERE puntos_trivia > 0
        ORDER BY puntos_trivia DESC, fecha_registro ASC, id ASC
@@ -647,15 +656,15 @@ app.get('/api/trivia/ranking', async (req, res) => {
     let previo = null;
     const ranking = filas.map((f, i) => {
       if (f.puntos !== previo) { pos = i + 1; previo = f.puntos; }
-      return { posicion: pos, nombre: f.nombre, puntos: f.puntos, tu: uid != null && f.id === uid };
+      return { posicion: pos, nombre: f.nombre, puntos: f.puntos, tiempo: f.tiempo, tu: uid != null && f.id === uid };
     });
 
     const t = await dbQuery('SELECT COUNT(*) AS n FROM usuarios WHERE puntos_trivia > 0');
     let mio = null;
     if (uid != null) {
-      const m = await dbQuery('SELECT puntos_trivia AS puntos FROM usuarios WHERE id = ?', [uid]);
+      const m = await dbQuery('SELECT puntos_trivia AS puntos, tiempo_trivia AS tiempo FROM usuarios WHERE id = ?', [uid]);
       if (m.length && m[0].puntos > 0) {
-        mio = { puntos: m[0].puntos, posicion: (await puestoDe(m[0].puntos)).posicion };
+        mio = { puntos: m[0].puntos, tiempo: m[0].tiempo, posicion: (await puestoDe(m[0].puntos)).posicion };
       }
     }
     res.json({ total: Number(t[0].n), ranking, mio });
@@ -678,9 +687,17 @@ app.get('/api/trivia/posicion', async (req, res) => {
   }
 });
 
-// Guardar los puntos de una partida (se conserva el MEJOR puntaje)
+// Guardar los puntos de una partida (se conserva el MEJOR puntaje, junto
+// con el tiempo de ESA misma partida — nunca se mezclan tiempos y puntajes
+// de partidas distintas).
+const TRIVIA_MAX_TIEMPO = 24 * 60 * 60; // tope defensivo: 1 día en segundos
+
 app.post('/api/trivia/puntos', async (req, res) => {
   const puntos = Number(req.body && req.body.puntos);
+  const tiempoCrudo = Number(req.body && req.body.tiempo);
+  const tiempo = Number.isFinite(tiempoCrudo) && tiempoCrudo >= 0 && tiempoCrudo <= TRIVIA_MAX_TIEMPO
+    ? Math.round(tiempoCrudo)
+    : 0;
   if (!Number.isInteger(puntos) || puntos < 0 || puntos > TRIVIA_MAX_PUNTOS) {
     return res.status(400).json({ error: 'Puntos inválidos' });
   }
@@ -689,12 +706,23 @@ app.post('/api/trivia/puntos', async (req, res) => {
     const uid = await resolverUsuarioId(req.body);
     if (uid == null) return res.status(401).json({ error: 'Ingresá con tu cuenta para guardar tus puntos' });
 
-    const antes = await dbQuery('SELECT puntos_trivia AS puntos FROM usuarios WHERE id = ?', [uid]);
+    const antes = await dbQuery(
+      'SELECT puntos_trivia AS puntos, tiempo_trivia AS tiempo FROM usuarios WHERE id = ?',
+      [uid]
+    );
     const previo = antes.length ? antes[0].puntos : 0;
-    await dbQuery('UPDATE usuarios SET puntos_trivia = GREATEST(puntos_trivia, ?) WHERE id = ?', [puntos, uid]);
-    const mejor = Math.max(previo, puntos);
+    const mejorado = puntos > previo;
+    if (mejorado) {
+      await dbQuery('UPDATE usuarios SET puntos_trivia = ?, tiempo_trivia = ? WHERE id = ?', [
+        puntos,
+        tiempo,
+        uid,
+      ]);
+    }
+    const mejor = mejorado ? puntos : previo;
+    const mejorTiempo = mejorado ? tiempo : antes.length ? antes[0].tiempo : 0;
     const { posicion, total } = await puestoDe(mejor);
-    res.json({ mejor, mejorado: puntos > previo, posicion, total });
+    res.json({ mejor, mejorTiempo, mejorado, posicion, total });
   } catch (e) {
     errorTrivia(res, e);
   }

@@ -910,8 +910,9 @@ footer { background: var(--pizarra); padding: 3rem 2rem; text-align: center; }
 .tv-pts b { color: var(--verde-claro); }
 .tv-pts em { font-style: normal; color: var(--oro); margin-left: 0.8rem; font-weight: 600; }
 .tv-barra { height: 6px; background: rgba(116, 198, 157, 0.2); border-radius: 99px; margin: 1rem 0 0.5rem; overflow: hidden; }
-.tv-barra i { display: block; height: 100%; width: 100%; background: var(--verde-claro); }
-.tv-barra.urgente i { background: var(--rojo-calor); }
+/* El color (verde → amarillo → rojo) y el ancho los controla trivia.js en cada frame,
+   según el tiempo restante; acá solo suavizamos la transición entre frames. */
+.tv-barra i { display: block; height: 100%; width: 100%; background: var(--verde-claro); transition: background-color 0.15s linear; }
 .tv-prog { font-size: 0.78rem; color: rgba(248, 244, 237, 0.55); margin-bottom: 0.6rem; }
 .tv-opt {
   display: block; width: 100%; text-align: left; font: inherit; font-size: 0.98rem;
