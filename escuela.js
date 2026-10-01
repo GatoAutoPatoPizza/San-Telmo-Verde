@@ -14,8 +14,13 @@
   function crearEspacio() {
     // Si ya hay tarjetas, copia su clase para respetar el tamaño/estilo de la grilla
     const ref = Array.prototype.find.call(grid.children, (n) => n.id !== ID);
-    const slot = document.createElement('div');
+    
+    // Se crea como enlace (<a>) en lugar de <div> para ser interactivo
+    const slot = document.createElement('a');
     slot.id = ID;
+    slot.href = 'https://www.tecnica35.com.ar/';
+    slot.target = '_blank'; // Abre el sitio en una pestaña nueva
+    slot.rel = 'noopener noreferrer'; // Buenas prácticas de seguridad para enlaces externos
     slot.className = (ref && ref.className ? ref.className + ' ' : '') + 'integrante-escuela';
 
     const ico = document.createElement('div');
