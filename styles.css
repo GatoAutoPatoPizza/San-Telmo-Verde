@@ -1084,3 +1084,24 @@ main .vista:not(#inicio) { min-height: 75vh; }
   .nav-auth { margin-left: auto; }
   #integrantes .section-inner { padding-left: 1rem; padding-right: 1rem; }
 }
+
+.integrante-escuela {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.6rem; text-align: center;
+  padding: 1.8rem 1.4rem; min-height: 180px;
+  background: var(--verde-oscuro, #1B4332); color: var(--crema, #F8F4ED);
+  border: 1px solid rgba(116, 198, 157, 0.35); border-radius: 4px;
+}
+.integrante-escuela .ie-ico {
+  width: 56px; height: 56px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.7rem;
+  background: rgba(116, 198, 157, 0.15); border: 1px solid rgba(116, 198, 157, 0.3);
+}
+.integrante-escuela .ie-label {
+  font-size: 0.7rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--verde-claro, #74C69D);
+}
+.integrante-escuela .ie-titulo {
+  font-family: 'Fraunces', serif; font-size: 1.15rem; font-weight: 600; line-height: 1.3;
+}
