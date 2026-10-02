@@ -345,8 +345,13 @@ function renderModPropuestas(propuestas) {
         ? `<button type="button" class="mod-btn mod-btn-restore" onclick="restaurarPropuestaMod('${p.id}')">Restaurar</button>`
         : `<button type="button" class="mod-btn mod-btn-archive" onclick="archivarPropuestaMod('${p.id}')">Archivar</button>`;
       const eliminarBtn = `<button type="button" class="mod-btn mod-btn-danger" onclick="eliminarPropuestaMod('${p.id}')">Eliminar</button>`;
+      const banActivo = p.usuario_id && p.usuario_baneado_hasta
+        ? new Date(p.usuario_baneado_hasta).getTime() > Date.now()
+        : false;
       const banBtn = p.usuario_id
-        ? `<button type="button" class="mod-btn mod-btn-ban" data-uid="${escapeHtml(String(p.usuario_id))}" data-unombre="${escapeHtml(p.nombre_usuario || 'Usuario')}" onclick="abrirModalBan(this.dataset.uid, this.dataset.unombre)">Banear autor</button>`
+        ? (banActivo
+          ? `<button type="button" class="mod-btn mod-btn-unban" data-uid="${escapeHtml(String(p.usuario_id))}" data-unombre="${escapeHtml(p.nombre_usuario || 'Usuario')}" onclick="desbanearUsuarioMod(this.dataset.uid, this.dataset.unombre)">Desbanear autor</button>`
+          : `<button type="button" class="mod-btn mod-btn-ban" data-uid="${escapeHtml(String(p.usuario_id))}" data-unombre="${escapeHtml(p.nombre_usuario || 'Usuario')}" onclick="abrirModalBan(this.dataset.uid, this.dataset.unombre)">Banear autor</button>`)
         : '';
       return `
       <div class="mod-card" data-id="${escapeHtml(String(p.id))}" data-usuario-id="${escapeHtml(String(p.usuario_id || ''))}" data-estado="${escapeHtml(p.estado || '')}">
@@ -525,6 +530,39 @@ async function confirmarBan(minutos) {
       ? `Se baneó a ${ok} usuario(s) por ${formatearDuracionBan(minutos)}.`
       : 'No se pudo aplicar el ban. Verificá que el servidor esté en marcha y que tu email esté en MODERADORES.'
   );
+  await cargarPropuestasMod();
+}
+
+/** Quita inmediatamente el ban activo de un usuario desde el panel de moderación. */
+async function desbanearUsuarioMod(usuarioId, nombre) {
+  if (!usuarioId) return;
+  const nombreSeguro = nombre || 'este usuario';
+  if (!confirm(`¿Desbanear a ${nombreSeguro}? Podrá volver a publicar inmediatamente.`)) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/mod/usuarios/${encodeURIComponent(usuarioId)}/desbanear`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: emailModerador() }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(data.error || 'No se pudo desbanear al usuario.');
+      return;
+    }
+
+    if (Store.usuario && String(Store.usuario.id) === String(usuarioId)) {
+      Store.usuario.baneado_hasta = null;
+      persistUsuario();
+      actualizarBannerBan();
+    }
+
+    alert(`${nombreSeguro} fue desbaneado correctamente.`);
+    await cargarPropuestasMod();
+  } catch (_) {
+    alert('No se pudo desbanear al usuario. Verificá que el servidor esté en marcha.');
+  }
 }
 
 /** Texto legible del tiempo restante de ban */
