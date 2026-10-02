@@ -941,6 +941,11 @@ footer { background: var(--pizarra); padding: 3rem 2rem; text-align: center; }
   color: #b71c1c;
 }
 .mod-btn-ban:hover { background: rgba(120, 40, 40, 0.28); }
+.mod-btn-unban {
+  background: rgba(64, 145, 108, 0.14);
+  color: var(--verde-oscuro);
+}
+.mod-btn-unban:hover { background: rgba(64, 145, 108, 0.24); }
 .ban-duracion-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
