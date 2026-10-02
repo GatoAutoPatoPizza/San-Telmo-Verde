@@ -273,24 +273,7 @@
       <div class="footer-copy">© 2025 San Telmo Verde · Desarrollado como prototipo ciudadano · Equipo 7 · AeroHack Joven</div>
     </div>
   </footer>
-  <div class="modal-overlay" id="modalBanDuracion">
-    <div class="modal-box modal-ban" role="dialog" aria-modal="true" aria-labelledby="banDuracionTitulo">
-      <div class="modal-header">
-        <h3 id="banDuracionTitulo">Banear usuario</h3>
-        <button type="button" class="modal-close-btn" onclick="cerrarModalBan()">×</button>
-      </div>
-      <div class="modal-body">
-        <p class="mod-hint" id="banDuracionHint">Elegí por cuánto tiempo se restringe al usuario por contenido no serio.</p>
-        <div class="ban-duracion-grid">
-          <button type="button" class="mod-btn mod-btn-ban" onclick="confirmarBan(60)">1 hora</button>
-          <button type="button" class="mod-btn mod-btn-ban" onclick="confirmarBan(360)">6 horas</button>
-          <button type="button" class="mod-btn mod-btn-ban" onclick="confirmarBan(1440)">24 horas</button>
-          <button type="button" class="mod-btn mod-btn-ban" onclick="confirmarBan(10080)">7 días</button>
-          <button type="button" class="mod-btn mod-btn-danger" onclick="confirmarBan(43200)">30 días</button>
-        </div>
-      </div>
-    </div>
-  </div>
+
   <div class="modal-overlay" id="modalTotal">
     <div class="modal-box">
       <div class="modal-header">
@@ -314,6 +297,10 @@
           <button type="button" class="mod-tab" data-tab="propuestas" onclick="cambiarTabMod(this)">Propuestas</button>
         </div>
         <div id="modTabDenuncias" class="mod-tab-panel">
+          <p class="mod-hint">Revisá reportes de la comunidad. Podés archivar la propuesta o descartar la denuncia.</p>
+          <div id="modDenunciasList" class="mod-list"></div>
+        </div>
+        <div id="modTabPropuestas" class="mod-tab-panel hidden">
           <p class="mod-hint">Todas las propuestas. Seleccioná una o varias con los checkboxes y usá las acciones masivas, o actuá sobre cada una por separado.</p>
           <div class="mod-bulk-bar" id="modBulkBar">
             <label class="mod-select-all">
@@ -328,8 +315,27 @@
               <button type="button" class="mod-btn mod-btn-ban" onclick="accionesMasivas('banear')" title="Banear autores de seleccionadas">Banear autores</button>
             </div>
           </div>
-
           <div id="modPropuestasList" class="mod-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal para elegir duración de ban -->
+  <div class="modal-overlay" id="modalBanDuracion">
+    <div class="modal-box modal-ban" role="dialog" aria-modal="true" aria-labelledby="banDuracionTitulo">
+      <div class="modal-header">
+        <h3 id="banDuracionTitulo">Banear usuario</h3>
+        <button type="button" class="modal-close-btn" onclick="cerrarModalBan()">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="mod-hint" id="banDuracionHint">Elegí por cuánto tiempo se restringe al usuario por contenido no serio.</p>
+        <div class="ban-duracion-grid">
+          <button type="button" class="mod-btn mod-btn-ban" onclick="confirmarBan(60)">1 hora</button>
+          <button type="button" class="mod-btn mod-btn-ban" onclick="confirmarBan(360)">6 horas</button>
+          <button type="button" class="mod-btn mod-btn-ban" onclick="confirmarBan(1440)">24 horas</button>
+          <button type="button" class="mod-btn mod-btn-ban" onclick="confirmarBan(10080)">7 días</button>
+          <button type="button" class="mod-btn mod-btn-danger" onclick="confirmarBan(43200)">30 días</button>
         </div>
       </div>
     </div>
@@ -360,6 +366,6 @@
       .then(() => console.log('Service Worker registrado correctamente'))
       .catch((err) => console.error('Error al registrar Service Worker:', err));
   }
-</script>
+  </script>
 </body>
 </html>
