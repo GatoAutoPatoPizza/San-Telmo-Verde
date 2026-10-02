@@ -278,9 +278,61 @@ async function cargarPropuestasMod() {
   }
 }
 
+/* Estado de selección múltiple en el panel de moderación */
+const ModSelect = {
+  ids: new Set(),
+  propuestasCache: [],
+};
+
+function actualizarContadorSeleccion() {
+  const n = ModSelect.ids.size;
+  const el = document.getElementById('modBulkCount');
+  if (el) el.textContent = n === 1 ? '1 seleccionada' : `${n} seleccionadas`;
+  const all = document.getElementById('modSelectAll');
+  if (all) {
+    const total = ModSelect.propuestasCache.length;
+    all.checked = total > 0 && n === total;
+    all.indeterminate = n > 0 && n < total;
+  }
+}
+
+function toggleSeleccionarPropuesta(id, checked) {
+  const sid = String(id);
+  if (checked) ModSelect.ids.add(sid);
+  else ModSelect.ids.delete(sid);
+  const card = document.querySelector(`.mod-card[data-id="${sid}"]`);
+  if (card) card.classList.toggle('selected', checked);
+  actualizarContadorSeleccion();
+}
+
+function toggleSeleccionarTodas(checked) {
+  ModSelect.ids.clear();
+  document.querySelectorAll('#modPropuestasList .mod-card-check').forEach((cb) => {
+    cb.checked = checked;
+    const id = cb.dataset.id;
+    if (checked && id) ModSelect.ids.add(String(id));
+    const card = cb.closest('.mod-card');
+    if (card) card.classList.toggle('selected', checked);
+  });
+  actualizarContadorSeleccion();
+}
+
+function idsSeleccionados() {
+  return [...ModSelect.ids];
+}
+
 function renderModPropuestas(propuestas) {
   const cont = document.getElementById('modPropuestasList');
   if (!cont) return;
+  ModSelect.propuestasCache = Array.isArray(propuestas) ? propuestas : [];
+  ModSelect.ids.clear();
+  const allCb = document.getElementById('modSelectAll');
+  if (allCb) {
+    allCb.checked = false;
+    allCb.indeterminate = false;
+  }
+  actualizarContadorSeleccion();
+
   if (!propuestas || propuestas.length === 0) {
     cont.innerHTML = '<div class="mod-empty">No hay propuestas todavía.</div>';
     return;
@@ -293,12 +345,17 @@ function renderModPropuestas(propuestas) {
         ? `<button type="button" class="mod-btn mod-btn-restore" onclick="restaurarPropuestaMod('${p.id}')">Restaurar</button>`
         : `<button type="button" class="mod-btn mod-btn-archive" onclick="archivarPropuestaMod('${p.id}')">Archivar</button>`;
       const eliminarBtn = `<button type="button" class="mod-btn mod-btn-danger" onclick="eliminarPropuestaMod('${p.id}')">Eliminar</button>`;
+      const banBtn = p.usuario_id
+        ? `<button type="button" class="mod-btn mod-btn-ban" data-uid="${escapeHtml(String(p.usuario_id))}" data-unombre="${escapeHtml(p.nombre_usuario || 'Usuario')}" onclick="abrirModalBan(this.dataset.uid, this.dataset.unombre)">Banear autor</button>`
+        : '';
       return `
-      <div class="mod-card">
+      <div class="mod-card" data-id="${escapeHtml(String(p.id))}" data-usuario-id="${escapeHtml(String(p.usuario_id || ''))}" data-estado="${escapeHtml(p.estado || '')}">
+        <input type="checkbox" class="mod-card-check" data-id="${escapeHtml(String(p.id))}"
+          onchange="toggleSeleccionarPropuesta('${p.id}', this.checked)" title="Seleccionar propuesta" />
         <h4>${escapeHtml(p.titulo)} ${badge}</h4>
         <p>${escapeHtml(p.descripcion || '')}</p>
         <div class="mod-meta">${escapeHtml(p.direccion || '')} · ${escapeHtml(p.nombre_usuario || 'Anonimo')} · ${p.votos || 0} votos</div>
-        <div class="mod-actions">${accion}${eliminarBtn}</div>
+        <div class="mod-actions">${accion}${eliminarBtn}${banBtn}</div>
       </div>`;
     })
     .join('');
@@ -343,6 +400,205 @@ async function eliminarPropuestaMod(id) {
   cargarDenunciasMod();
   await intentarCargarDesdeAPI();
   renderAll();
+}
+
+/** Acciones masivas sobre las propuestas seleccionadas en el panel */
+async function accionesMasivas(accion) {
+  const ids = idsSeleccionados();
+  if (!ids.length) {
+    alert('Seleccioná al menos una propuesta con los checkboxes.');
+    return;
+  }
+
+  if (accion === 'eliminar') {
+    if (!confirm(`¿Eliminar ${ids.length} propuesta(s) definitivamente? No se puede deshacer.`)) return;
+  }
+  if (accion === 'banear') {
+    const autores = new Map();
+    ids.forEach((id) => {
+      const card = document.querySelector(`.mod-card[data-id="${id}"]`);
+      const uid = card?.dataset?.usuarioId;
+      if (uid) {
+        const nombre = card.querySelector('.mod-meta')?.textContent?.split('·')[1]?.trim() || 'Usuario';
+        autores.set(String(uid), nombre);
+      }
+    });
+    if (!autores.size) {
+      alert('Ninguna de las propuestas seleccionadas tiene un autor registrado para banear.');
+      return;
+    }
+    abrirModalBanMulti([...autores.keys()], [...autores.values()]);
+    return;
+  }
+
+  const email = emailModerador();
+  const promesas = ids.map(async (id) => {
+    try {
+      if (accion === 'archivar') {
+        await fetch(`${API_BASE}/api/mod/propuestas/${encodeURIComponent(id)}/archivar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
+      } else if (accion === 'restaurar') {
+        await fetch(`${API_BASE}/api/mod/propuestas/${encodeURIComponent(id)}/restaurar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
+      } else if (accion === 'eliminar') {
+        await fetch(`${API_BASE}/api/mod/propuestas/${encodeURIComponent(id)}`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
+      }
+    } catch (_) {}
+  });
+  await Promise.all(promesas);
+  ModSelect.ids.clear();
+  cargarPropuestasMod();
+  if (accion === 'eliminar') cargarDenunciasMod();
+  await intentarCargarDesdeAPI();
+  renderAll();
+}
+
+/* ── Ban / timeout de usuarios ── */
+let _banPendiente = null; // { usuarioIds: string[], nombres: string[] }
+
+function abrirModalBan(usuarioId, nombre) {
+  if (!usuarioId) return;
+  _banPendiente = { usuarioIds: [String(usuarioId)], nombres: [nombre || 'Usuario'] };
+  const hint = document.getElementById('banDuracionHint');
+  if (hint) hint.textContent = `Banear a ${nombre || 'Usuario'} por contenido no serio. Elegí la duración:`;
+  document.getElementById('modalBanDuracion')?.classList.add('active');
+}
+
+function abrirModalBanMulti(usuarioIds, nombres) {
+  _banPendiente = { usuarioIds: usuarioIds.map(String), nombres: nombres || [] };
+  const hint = document.getElementById('banDuracionHint');
+  const n = usuarioIds.length;
+  if (hint) hint.textContent = `Banear a ${n} autor(es) por contenido no serio. Elegí la duración:`;
+  document.getElementById('modalBanDuracion')?.classList.add('active');
+}
+
+function cerrarModalBan() {
+  document.getElementById('modalBanDuracion')?.classList.remove('active');
+  _banPendiente = null;
+}
+
+function formatearDuracionBan(minutos) {
+  if (minutos < 60) return `${minutos} minuto${minutos === 1 ? '' : 's'}`;
+  if (minutos < 1440) {
+    const h = Math.round(minutos / 60);
+    return `${h} hora${h === 1 ? '' : 's'}`;
+  }
+  const d = Math.round(minutos / 1440);
+  return `${d} día${d === 1 ? '' : 's'}`;
+}
+
+async function confirmarBan(minutos) {
+  if (!_banPendiente || !_banPendiente.usuarioIds.length) {
+    cerrarModalBan();
+    return;
+  }
+  const email = emailModerador();
+  const ids = [..._banPendiente.usuarioIds];
+  cerrarModalBan();
+  const resultados = await Promise.all(
+    ids.map(async (uid) => {
+      try {
+        const res = await fetch(`${API_BASE}/api/mod/usuarios/${encodeURIComponent(uid)}/banear`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, minutos }),
+        });
+        return res.ok;
+      } catch (_) {
+        return false;
+      }
+    })
+  );
+  const ok = resultados.filter(Boolean).length;
+  alert(
+    ok
+      ? `Se baneó a ${ok} usuario(s) por ${formatearDuracionBan(minutos)}.`
+      : 'No se pudo aplicar el ban. Verificá que el servidor esté en marcha y que tu email esté en MODERADORES.'
+  );
+}
+
+/** Texto legible del tiempo restante de ban */
+function textoTiempoRestanteBan(hastaISO) {
+  if (!hastaISO) return '';
+  const hasta = new Date(hastaISO).getTime();
+  const ahora = Date.now();
+  const ms = hasta - ahora;
+  if (ms <= 0) return '';
+  const min = Math.ceil(ms / 60000);
+  if (min < 60) return `${min} minuto${min === 1 ? '' : 's'}`;
+  const horas = Math.floor(min / 60);
+  const restoMin = min % 60;
+  if (horas < 24) {
+    return restoMin > 0
+      ? `${horas} hora${horas === 1 ? '' : 's'} y ${restoMin} min`
+      : `${horas} hora${horas === 1 ? '' : 's'}`;
+  }
+  const dias = Math.floor(horas / 24);
+  const restoH = horas % 24;
+  return restoH > 0
+    ? `${dias} día${dias === 1 ? '' : 's'} y ${restoH} h`
+    : `${dias} día${dias === 1 ? '' : 's'}`;
+}
+
+function usuarioEstaBaneado() {
+  const hasta = Store.usuario?.baneado_hasta;
+  if (!hasta) return false;
+  return new Date(hasta).getTime() > Date.now();
+}
+
+function actualizarBannerBan() {
+  const banner = document.getElementById('banBanner');
+  const msg = document.getElementById('banBannerMsg');
+  const wrap = document.getElementById('propuestaFormWrap');
+  const campos = document.getElementById('formPropuestaCampos');
+  if (!banner || !msg) return;
+
+  if (usuarioEstaBaneado()) {
+    const tiempo = textoTiempoRestanteBan(Store.usuario.baneado_hasta);
+    msg.textContent = `Estás baneado por ${tiempo || 'un tiempo'}, por favor, retírese y vuelva a intentarlo más tarde.`;
+    banner.classList.remove('hidden');
+    wrap?.classList.add('form-propuesta-bloqueada');
+    if (campos) campos.setAttribute('aria-disabled', 'true');
+  } else {
+    banner.classList.add('hidden');
+    wrap?.classList.remove('form-propuesta-bloqueada');
+    if (campos) campos.removeAttribute('aria-disabled');
+    if (Store.usuario) Store.usuario.baneado_hasta = null;
+  }
+}
+
+/** Consulta al servidor el estado de ban del usuario logueado */
+async function refrescarEstadoBan() {
+  if (!Store.usuario) {
+    actualizarBannerBan();
+    return;
+  }
+  try {
+    const q = new URLSearchParams();
+    if (Store.usuario.email) q.set('email', Store.usuario.email);
+    if (Store.usuario.id) q.set('id', String(Store.usuario.id));
+    if (Store.usuario.google_id) q.set('google_id', String(Store.usuario.google_id));
+    const res = await fetch(`${API_BASE}/api/usuarios/estado-ban?${q.toString()}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.baneado && data.baneado_hasta) {
+        Store.usuario.baneado_hasta = data.baneado_hasta;
+      } else {
+        Store.usuario.baneado_hasta = null;
+      }
+    }
+  } catch (_) {}
+  actualizarBannerBan();
 }
 
 /** ¿La propuesta es del usuario logueado? (por usuario_id o email/nombre de creador) */
@@ -420,6 +676,7 @@ function setUsuario(usuario) {
   syncVotosUsuarioFromStorage();
   renderAuthUI();
   renderAll();
+  refrescarEstadoBan();
   // Google puede cargar async; reintentar init del botón
   window.addEventListener('load', () => setTimeout(inicializarGoogleButton, 300));
   setTimeout(inicializarGoogleButton, 800);
@@ -753,6 +1010,13 @@ async function crearPropuesta(datos) {
     abrirModalLogin();
     return null;
   }
+  await refrescarEstadoBan();
+  if (usuarioEstaBaneado()) {
+    actualizarBannerBan();
+    const tiempo = textoTiempoRestanteBan(Store.usuario.baneado_hasta);
+    alert(`Estás baneado por ${tiempo || 'un tiempo'}, por favor, retírese y vuelva a intentarlo más tarde.`);
+    return null;
+  }
 
   const { titulo, direccion, descripcion, tipo, latitud, longitud } = datos;
   if (!titulo || !direccion) {
@@ -787,6 +1051,16 @@ async function crearPropuesta(datos) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...draft, usuario: Store.usuario }),
     });
+    if (res.status === 403) {
+      const err = await res.json().catch(() => ({}));
+      if (err.baneado_hasta) {
+        Store.usuario.baneado_hasta = err.baneado_hasta;
+        actualizarBannerBan();
+      }
+      const tiempo = textoTiempoRestanteBan(err.baneado_hasta || Store.usuario?.baneado_hasta);
+      alert(err.error || `Estás baneado por ${tiempo || 'un tiempo'}, por favor, retírese y vuelva a intentarlo más tarde.`);
+      return null;
+    }
     if (res.ok) {
       const saved = await res.json();
       if (saved?.id) {
@@ -1302,6 +1576,9 @@ async function init() {
   document.getElementById('modalModeracion')?.addEventListener('click', (e) => {
     if (e.target.id === 'modalModeracion') cerrarModalModeracion();
   });
+  document.getElementById('modalBanDuracion')?.addEventListener('click', (e) => {
+    if (e.target.id === 'modalBanDuracion') cerrarModalBan();
+  });
   document.getElementById('aiInput')?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') enviarMensaje();
   });
@@ -1311,6 +1588,11 @@ async function init() {
   await intentarCargarDesdeAPI();
   renderAuthUI();
   renderAll();
+  await refrescarEstadoBan();
+  // Re-chequear ban cada minuto por si expira mientras está en la página
+  setInterval(() => {
+    if (Store.usuario?.baneado_hasta) actualizarBannerBan();
+  }, 60000);
   // Google puede cargar async; reintentar init del botón
   window.addEventListener('load', () => setTimeout(inicializarGoogleButton, 300));
   setTimeout(inicializarGoogleButton, 800);
