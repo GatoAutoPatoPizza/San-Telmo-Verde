@@ -14,6 +14,13 @@
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#2e7d32">
 </head>
+  <script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js')
+      .then(() => console.log('Service Worker registrado correctamente'))
+      .catch((err) => console.error('Error al registrar Service Worker:', err));
+  }
+</script>
 <body>
   <nav>
     <div class="nav-left">
