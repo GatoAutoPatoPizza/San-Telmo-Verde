@@ -511,7 +511,12 @@ app.get('/api/mod/propuestas', async (req, res) => {
   const email = req.query.email || req.headers['x-mod-email'];
   if (!esModeradorEmail(email)) return res.status(403).json({ error: 'No autorizado' });
   try {
-    const rows = await dbQuery('SELECT * FROM propuestas ORDER BY created_at DESC');
+    const rows = await dbQuery(
+      `SELECT p.*, u.baneado_hasta AS usuario_baneado_hasta
+       FROM propuestas p
+       LEFT JOIN usuarios u ON u.id = p.usuario_id
+       ORDER BY p.created_at DESC`
+    );
     res.json(rows);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -596,8 +601,28 @@ app.post('/api/mod/usuarios/:id/banear', async (req, res) => {
   }
   try {
     const hasta = new Date(Date.now() + minutos * 60 * 1000);
-    await dbQuery('UPDATE usuarios SET baneado_hasta = ? WHERE id = ?', [hasta, uid]);
+    const result = await dbQuery('UPDATE usuarios SET baneado_hasta = ? WHERE id = ?', [hasta, uid]);
+    if (!result.affectedRows) return res.status(404).json({ error: 'Usuario no encontrado' });
     res.json({ ok: true, baneado_hasta: hasta.toISOString(), minutos });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Quitar el ban de un usuario (moderador) inmediatamente.
+app.post('/api/mod/usuarios/:id/desbanear', async (req, res) => {
+  const email = (req.body && req.body.email) || req.query.email || req.headers['x-mod-email'];
+  if (!esModeradorEmail(email)) return res.status(403).json({ error: 'No autorizado' });
+
+  const uid = req.params.id;
+  if (!uid || !/^\d+$/.test(String(uid))) {
+    return res.status(400).json({ error: 'ID de usuario inválido' });
+  }
+
+  try {
+    const result = await dbQuery('UPDATE usuarios SET baneado_hasta = NULL WHERE id = ?', [uid]);
+    if (!result.affectedRows) return res.status(404).json({ error: 'Usuario no encontrado' });
+    res.json({ ok: true, baneado_hasta: null });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
