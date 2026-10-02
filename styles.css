@@ -863,7 +863,8 @@ footer { background: var(--pizarra); padding: 3rem 2rem; text-align: center; }
   background: var(--crema);
   border: 1px solid rgba(64,145,108,0.15);
   border-radius: 4px;
-  padding: 1rem 1.1rem;
+  padding: 1rem 2.2rem 1rem 1.1rem;
+  position: relative;
 }
 .mod-card h4 { font-size: 0.9rem; color: var(--verde-oscuro); margin-bottom: 0.35rem; }
 .mod-card p { font-size: 0.8rem; color: var(--pizarra-claro); margin: 0.25rem 0; line-height: 1.45; }
@@ -888,6 +889,88 @@ footer { background: var(--pizarra); padding: 3rem 2rem; text-align: center; }
   background: rgba(200,148,10,0.15); color: var(--oro);
 }
 .mod-badge.archivada { background: rgba(192,57,43,0.12); color: var(--rojo-calor); }
+
+/* Selección múltiple y acciones masivas */
+.mod-bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1rem;
+  padding: 0.65rem 0.75rem;
+  margin-bottom: 0.85rem;
+  background: rgba(64,145,108,0.08);
+  border: 1px solid rgba(64,145,108,0.2);
+  border-radius: 6px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.mod-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--verde-oscuro);
+  cursor: pointer;
+  user-select: none;
+}
+.mod-select-all input { width: 1rem; height: 1rem; accent-color: var(--verde-medio); cursor: pointer; }
+.mod-bulk-count {
+  font-size: 0.78rem;
+  color: var(--pizarra-claro);
+  min-width: 7rem;
+}
+.mod-bulk-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-left: auto; }
+.mod-card-check {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--verde-medio);
+  cursor: pointer;
+  z-index: 1;
+}
+.mod-card.selected {
+  outline: 2px solid var(--verde-medio);
+  background: rgba(64,145,108,0.06);
+}
+.mod-btn-ban {
+  background: rgba(120, 40, 40, 0.15);
+  color: #b71c1c;
+}
+.mod-btn-ban:hover { background: rgba(120, 40, 40, 0.28); }
+.ban-duracion-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+.modal-ban { max-width: 380px; }
+
+/* Banner de ban (timeout) — letras rojas */
+.ban-banner {
+  background: rgba(192, 57, 43, 0.1);
+  border: 1px solid rgba(192, 57, 43, 0.45);
+  border-radius: 6px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+}
+.ban-banner p {
+  margin: 0;
+  color: #c0392b;
+  font-weight: 700;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  letter-spacing: 0.01em;
+}
+.ban-banner.hidden { display: none; }
+.form-propuesta-bloqueada #formPropuestaCampos {
+  opacity: 0.45;
+  pointer-events: none;
+  filter: grayscale(0.3);
+}
 
 /* ============================================
    TRIVIA VERDE (ventana emergente)
