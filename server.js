@@ -100,10 +100,18 @@ app.post('/api/auth/google', async (req, res) => {
   }
 
   try {
-    const existing = await dbQuery(
-      'SELECT id, nombre, email, google_id FROM usuarios WHERE google_id = ? OR email = ? LIMIT 1',
-      [gid, mail]
-    );
+    let existing;
+    try {
+      existing = await dbQuery(
+        'SELECT id, nombre, email, google_id, baneado_hasta FROM usuarios WHERE google_id = ? OR email = ? LIMIT 1',
+        [gid, mail]
+      );
+    } catch (_) {
+      existing = await dbQuery(
+        'SELECT id, nombre, email, google_id FROM usuarios WHERE google_id = ? OR email = ? LIMIT 1',
+        [gid, mail]
+      );
+    }
 
     if (existing.length) {
       const u = existing[0];
@@ -111,11 +119,14 @@ app.post('/api/auth/google', async (req, res) => {
       if (!u.google_id) {
         await dbQuery('UPDATE usuarios SET google_id = ?, nombre = ? WHERE id = ?', [gid, name, u.id]);
       }
+      const banHasta = u.baneado_hasta ? new Date(u.baneado_hasta) : null;
+      const banActivo = banHasta && banHasta.getTime() > Date.now();
       return res.json({
         id: u.id,
         nombre: name || u.nombre,
         email: u.email || mail,
         google_id: gid,
+        baneado_hasta: banActivo ? banHasta.toISOString() : null,
       });
     }
 
@@ -128,11 +139,12 @@ app.post('/api/auth/google', async (req, res) => {
       nombre: name,
       email: mail,
       google_id: gid,
+      baneado_hasta: null,
     });
   } catch (e) {
     // Si MySQL no está, devolvemos el perfil para que el front siga
     if (e.code === 'ECONNREFUSED' || String(e.message).includes('not available')) {
-      return res.json({ id: gid, nombre: name, email: mail, google_id: gid });
+      return res.json({ id: gid, nombre: name, email: mail, google_id: gid, baneado_hasta: null });
     }
     res.status(500).json({ error: e.message });
   }
@@ -170,12 +182,23 @@ app.post('/api/propuestas', async (req, res) => {
 
     if (usuario && (usuario.email || usuario.google_id)) {
       const existing = await dbQuery(
-        'SELECT id, nombre FROM usuarios WHERE email = ? OR google_id = ? LIMIT 1',
+        'SELECT id, nombre, baneado_hasta FROM usuarios WHERE email = ? OR google_id = ? LIMIT 1',
         [usuario.email || null, usuario.google_id || null]
       );
       if (existing.length) {
         usuarioId = existing[0].id;
         nombreUsuario = existing[0].nombre;
+        // Timeout / ban: no permitir publicar si está restringido
+        if (existing[0].baneado_hasta) {
+          const hasta = new Date(existing[0].baneado_hasta);
+          if (hasta.getTime() > Date.now()) {
+            return res.status(403).json({
+              error: 'Estás baneado temporalmente y no podés publicar propuestas.',
+              baneado: true,
+              baneado_hasta: hasta.toISOString(),
+            });
+          }
+        }
       } else {
         const ins = await dbQuery('INSERT INTO usuarios (nombre, email, google_id) VALUES (?, ?, ?)', [
           usuario.nombre || 'Vecino/a',
@@ -562,6 +585,58 @@ app.delete('/api/mod/denuncias/:id', async (req, res) => {
   }
 });
 
+// Banear / timeout a un usuario (moderador) — minutos desde ahora
+app.post('/api/mod/usuarios/:id/banear', async (req, res) => {
+  const email = (req.body && req.body.email) || req.query.email || req.headers['x-mod-email'];
+  if (!esModeradorEmail(email)) return res.status(403).json({ error: 'No autorizado' });
+  const minutos = Math.max(1, parseInt(req.body?.minutos, 10) || 60);
+  const uid = req.params.id;
+  if (!uid || !/^\d+$/.test(String(uid))) {
+    return res.status(400).json({ error: 'ID de usuario inválido' });
+  }
+  try {
+    const hasta = new Date(Date.now() + minutos * 60 * 1000);
+    await dbQuery('UPDATE usuarios SET baneado_hasta = ? WHERE id = ?', [hasta, uid]);
+    res.json({ ok: true, baneado_hasta: hasta.toISOString(), minutos });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Consultar si un usuario está baneado (cualquier cliente autenticado)
+app.get('/api/usuarios/estado-ban', async (req, res) => {
+  const { email, id, google_id } = req.query;
+  if (!email && !id && !google_id) {
+    return res.status(400).json({ error: 'Falta email, id o google_id' });
+  }
+  try {
+    let rows = [];
+    if (id && /^\d+$/.test(String(id))) {
+      rows = await dbQuery('SELECT id, baneado_hasta FROM usuarios WHERE id = ? LIMIT 1', [id]);
+    } else if (email || google_id) {
+      rows = await dbQuery(
+        'SELECT id, baneado_hasta FROM usuarios WHERE email = ? OR google_id = ? LIMIT 1',
+        [email || null, google_id || null]
+      );
+    }
+    if (!rows.length) {
+      return res.json({ baneado: false, baneado_hasta: null });
+    }
+    const hasta = rows[0].baneado_hasta ? new Date(rows[0].baneado_hasta) : null;
+    const activo = hasta && hasta.getTime() > Date.now();
+    res.json({
+      baneado: !!activo,
+      baneado_hasta: activo ? hasta.toISOString() : null,
+    });
+  } catch (e) {
+    // Si la columna aún no existe o MySQL no está, no bloqueamos al usuario
+    if (e.code === 'ER_BAD_FIELD_ERROR' || e.code === 'ECONNREFUSED') {
+      return res.json({ baneado: false, baneado_hasta: null });
+    }
+    res.status(500).json({ error: e.message });
+  }
+});
+
 
 /* ============================================
    TRIVIA VERDE — puntos y ranking
@@ -598,6 +673,25 @@ function asegurarColumnaTrivia() {
   return columnaTriviaPromesa;
 }
 asegurarColumnaTrivia().catch((e) => console.warn('Trivia: no se pudo verificar la columna puntos_trivia:', e.message));
+
+/** Columna baneado_hasta para timeouts de moderación (se crea sola si falta). */
+let columnaBanPromesa = null;
+async function asegurarColumnaBan() {
+  if (!columnaBanPromesa) {
+    columnaBanPromesa = (async () => {
+      const cols = await dbQuery("SHOW COLUMNS FROM usuarios LIKE 'baneado_hasta'");
+      if (!cols.length) {
+        await dbQuery('ALTER TABLE usuarios ADD COLUMN baneado_hasta DATETIME NULL DEFAULT NULL');
+        console.log('Se agregó la columna usuarios.baneado_hasta');
+      }
+    })().catch((e) => {
+      columnaBanPromesa = null;
+      throw e;
+    });
+  }
+  return columnaBanPromesa;
+}
+asegurarColumnaBan().catch((e) => console.warn('Ban: no se pudo verificar la columna baneado_hasta:', e.message));
 
 /** Igual que en votar/denunciar: identifica al usuario por id, email o google_id. */
 async function resolverUsuarioId(datos) {
