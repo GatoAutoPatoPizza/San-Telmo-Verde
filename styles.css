@@ -220,6 +220,33 @@ section { padding: 5rem 2rem; }
 }
 .popup-votos span { font-size: 0.78rem; color: var(--pizarra-claro); }
 
+/* Botón "Ver más información →" dentro de un popup de Leaflet */
+.popup-vermas-btn {
+  display: block; width: 100%; margin-top: 0.6rem;
+  background: none; border: none; border-top: 1px solid rgba(0,0,0,0.08);
+  padding-top: 0.5rem; text-align: left; cursor: pointer;
+  font-size: 0.78rem; font-weight: 600; color: var(--verde-medio);
+}
+.popup-vermas-btn:hover { color: var(--verde-oscuro); }
+
+/* Botón "Ver en el mapa" dentro de una tarjeta o en el modal de detalle */
+.pcard-ver-mapa, .btn-ver-en-mapa {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  margin-top: 0.75rem; padding: 0.5rem 0.9rem;
+  background: rgba(116, 198, 157, 0.12); border: none; border-radius: 6px;
+  font-size: 0.78rem; font-weight: 600; color: var(--verde-medio); cursor: pointer;
+}
+.pcard-ver-mapa:hover, .btn-ver-en-mapa:hover { background: rgba(116, 198, 157, 0.22); }
+.btn-ver-en-mapa { width: 100%; justify-content: center; margin-top: 1rem; }
+
+/* Resalte momentáneo del marcador cuando se llega a él desde "Ver en el mapa" */
+@keyframes resaltarMarcador {
+  0%, 100% { transform: scale(1); }
+  25%, 75% { transform: scale(1.6); box-shadow: 0 0 0 6px rgba(200, 148, 10, 0.35); }
+  50% { transform: scale(1.3); }
+}
+.marcador-resaltado .mapa-marcador { animation: resaltarMarcador 0.9s ease-in-out 2; }
+
 /* Leyenda de colores debajo del mapa */
 .mapa-leyenda { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 1rem; }
 .leyenda-item {
