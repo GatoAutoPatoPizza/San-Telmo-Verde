@@ -2020,8 +2020,7 @@ if (document.readyState === 'loading') {
 
 
 
-// Codigo SECRETO KONAMI
-
+// ____ Codigo SECRETO KONAMI ______
 let SANTELMOURL = 'https://www.youtube.com/watch?v=q7dfO4XJMoM';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -2034,21 +2033,34 @@ document.addEventListener('DOMContentLoaded', () => {
   ];
 
   let indiceKonami = 0;
+  let activo = true;
 
-  window.addEventListener('keydown', (event) => {
+  // Temporizador: Desactiva la escucha a los 10 segundos
+  const temporizador = setTimeout(() => {
+    activo = false;
+    window.removeEventListener('keydown', manejarKonami);
+  }, 10000); // 10000 ms = 10 segundos
+
+  function manejarKonami(event) {
+    if (!activo) return;
+
     const teclaPresionada = event.key.length === 1 ? event.key.toLowerCase() : event.key;
     const teclaEsperada = codigoKonami[indiceKonami].toLowerCase();
 
     if (teclaPresionada === teclaEsperada) {
       indiceKonami++;
       if (indiceKonami === codigoKonami.length) {
+        clearTimeout(temporizador); // Cancela el reloj si lo activó a tiempo
         activarSecreto();
         indiceKonami = 0;
       }
     } else {
       indiceKonami = teclaPresionada === codigoKonami[0].toLowerCase() ? 1 : 0;
     }
-  });
+  }
+
+  // Escucha el teclado asignando la función con nombre para poder removerla después
+  window.addEventListener('keydown', manejarKonami);
 
   function activarSecreto() {
     window.location.href = SANTELMOURL;
