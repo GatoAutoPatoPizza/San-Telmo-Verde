@@ -1925,3 +1925,40 @@ if (document.readyState === 'loading') {
 } else {
   init();
 }
+
+
+
+// Codigo SECRETO KONAMI
+
+let SANTELMOURL = 'https://www.youtube.com/watch?v=q7dfO4XJMoM';
+
+document.addEventListener('DOMContentLoaded', () => {
+  const codigoKonami = [
+    'ArrowUp', 'ArrowUp',
+    'ArrowDown', 'ArrowDown',
+    'ArrowLeft', 'ArrowRight',
+    'ArrowLeft', 'ArrowRight',
+    'b', 'a'
+  ];
+
+  let indiceKonami = 0;
+
+  window.addEventListener('keydown', (event) => {
+    const teclaPresionada = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    const teclaEsperada = codigoKonami[indiceKonami].toLowerCase();
+
+    if (teclaPresionada === teclaEsperada) {
+      indiceKonami++;
+      if (indiceKonami === codigoKonami.length) {
+        activarSecreto();
+        indiceKonami = 0;
+      }
+    } else {
+      indiceKonami = teclaPresionada === codigoKonami[0].toLowerCase() ? 1 : 0;
+    }
+  });
+
+  function activarSecreto() {
+    window.location.href = SANTELMOURL;
+  }
+});
