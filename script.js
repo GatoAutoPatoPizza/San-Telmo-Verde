@@ -1536,6 +1536,12 @@ function irAMapa(lat, lng, tipo, id) {
   cerrarModalDetalle();
   cerrarModalTotal();
   mostrarVista('mapa');
+  enfocarMarcador(lat, lng, tipo, id);
+}
+
+// Centra el mapa en un marcador, abre su popup y lo resalta.
+// Asume que la vista del mapa ya está (o está por estar) visible.
+function enfocarMarcador(lat, lng, tipo, id) {
   // Esperamos a que la vista del mapa esté visible y aplicarVista() ya haya
   // corrido su propio invalidateSize() (a los 60ms) antes de centrar,
   // para que Leaflet calcule bien el tamaño del contenedor.
@@ -1555,6 +1561,132 @@ function irAMapa(lat, lng, tipo, id) {
       }
     }, 850);
   }, 150);
+}
+
+// ——— Buscador del mapa ———
+// Busca en espacios verdes, islas de calor y propuestas con ubicación.
+// Al elegir un resultado, el mapa vuela hasta ahí y abre su popup.
+const BuscadorMapa = { resultados: [], activo: -1 };
+
+function itemsBuscablesMapa() {
+  const items = [];
+  ESPACIOS_VERDES.forEach((f) => items.push({
+    tipo: 'verde', id: f.id, lat: f.lat, lng: f.lng, ico: '🌳',
+    titulo: f.titulo, sub: f.resumen,
+    pajar: normalizarBusqueda([f.titulo, f.resumen, f.detalle, 'espacio verde'].join(' ')),
+  }));
+  ISLAS_CALOR.forEach((f) => items.push({
+    tipo: 'calor', id: f.id, lat: f.lat, lng: f.lng, ico: '🌡️',
+    titulo: f.titulo, sub: f.resumen,
+    pajar: normalizarBusqueda([f.titulo, f.resumen, f.detalle].join(' ')),
+  }));
+  select.propuestasActivas()
+    .filter((p) => p.latitud != null && p.longitud != null)
+    .forEach((p) => items.push({
+      tipo: 'prop', id: p.id, lat: p.latitud, lng: p.longitud, ico: '⭐',
+      titulo: p.titulo, sub: `Propuesta · ${p.direccion || p.tipo} · ${p.votos} voto${p.votos === 1 ? '' : 's'}`,
+      pajar: normalizarBusqueda([p.titulo, p.direccion, p.descripcion, p.tipo, p.nombre_usuario, 'propuesta'].join(' ')),
+    }));
+  return items;
+}
+
+function buscarEnMapa(texto) {
+  const terminos = normalizarBusqueda(texto).split(/\s+/).filter(Boolean);
+  if (terminos.length === 0) return [];
+  return itemsBuscablesMapa()
+    .filter((it) => terminos.every((t) => it.pajar.includes(t)))
+    .map((it) => {
+      const tit = normalizarBusqueda(it.titulo);
+      return { it, score: terminos.every((t) => tit.includes(t)) ? 2 : 1 }; // título primero
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8)
+    .map((x) => x.it);
+}
+
+function cerrarResultadosMapa() {
+  const ul = document.getElementById('mapaResultados');
+  const inp = document.getElementById('buscadorMapa');
+  ul?.classList.add('hidden');
+  inp?.setAttribute('aria-expanded', 'false');
+  inp?.removeAttribute('aria-activedescendant');
+  BuscadorMapa.activo = -1;
+}
+
+function marcarResultadoActivo(i) {
+  BuscadorMapa.activo = i;
+  const inp = document.getElementById('buscadorMapa');
+  document.querySelectorAll('#mapaResultados li[data-i]').forEach((li) => {
+    const on = Number(li.dataset.i) === i;
+    li.setAttribute('aria-selected', on ? 'true' : 'false');
+    if (on) { inp?.setAttribute('aria-activedescendant', li.id); li.scrollIntoView({ block: 'nearest' }); }
+  });
+}
+
+function renderResultadosMapa() {
+  const ul = document.getElementById('mapaResultados');
+  const inp = document.getElementById('buscadorMapa');
+  if (!ul || !inp) return;
+  const q = inp.value.trim();
+  if (!q) { cerrarResultadosMapa(); return; }
+  BuscadorMapa.resultados = buscarEnMapa(q);
+  BuscadorMapa.activo = -1;
+  ul.innerHTML = BuscadorMapa.resultados.length
+    ? BuscadorMapa.resultados.map((r, i) => `
+        <li id="mapaRes-${i}" role="option" data-i="${i}" aria-selected="false">
+          <span class="res-ico" aria-hidden="true">${r.ico}</span>
+          <span class="res-txt">
+            <div class="res-titulo">${escapeHtml(r.titulo)}</div>
+            <div class="res-sub">${escapeHtml(r.sub)}</div>
+          </span>
+        </li>`).join('')
+    : `<li class="res-vacio">No encontramos nada para «${escapeHtml(q)}» en el mapa.</li>`;
+  ul.classList.remove('hidden');
+  inp.setAttribute('aria-expanded', 'true');
+}
+
+function seleccionarResultadoMapa(i) {
+  const r = BuscadorMapa.resultados[i];
+  if (!r) return;
+  const inp = document.getElementById('buscadorMapa');
+  if (inp) inp.value = r.titulo;
+  document.getElementById('buscadorMapaLimpiar')?.classList.remove('hidden');
+  cerrarResultadosMapa();
+  // Si el usuario había apagado esa capa con los filtros, la prendemos
+  const btn = document.querySelector(`.filtros-mapa .filtro-btn.${r.tipo}`);
+  if (!Store.filtros[r.tipo] && btn) filtrar(r.tipo, btn);
+  document.querySelector('.mapa-canvas')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  enfocarMarcador(r.lat, r.lng, r.tipo, r.id);
+}
+
+function activarBuscadorMapa() {
+  const inp = document.getElementById('buscadorMapa');
+  const ul = document.getElementById('mapaResultados');
+  const btn = document.getElementById('buscadorMapaLimpiar');
+  if (!inp || !ul) return;
+  inp.addEventListener('input', () => {
+    btn?.classList.toggle('hidden', !inp.value);
+    renderResultadosMapa();
+  });
+  inp.addEventListener('focus', () => { if (inp.value.trim()) renderResultadosMapa(); });
+  inp.addEventListener('keydown', (e) => {
+    const n = BuscadorMapa.resultados.length;
+    if (e.key === 'ArrowDown' && n) { e.preventDefault(); marcarResultadoActivo((BuscadorMapa.activo + 1) % n); }
+    else if (e.key === 'ArrowUp' && n) { e.preventDefault(); marcarResultadoActivo((BuscadorMapa.activo - 1 + n) % n); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (!ul.classList.contains('hidden') && n) seleccionarResultadoMapa(BuscadorMapa.activo >= 0 ? BuscadorMapa.activo : 0);
+    } else if (e.key === 'Escape') {
+      if (ul.classList.contains('hidden')) { inp.value = ''; btn?.classList.add('hidden'); }
+      cerrarResultadosMapa();
+    }
+  });
+  ul.addEventListener('click', (e) => {
+    const li = e.target.closest('li[data-i]');
+    if (li) seleccionarResultadoMapa(Number(li.dataset.i));
+  });
+  btn?.addEventListener('click', () => { inp.value = ''; btn.classList.add('hidden'); cerrarResultadosMapa(); inp.focus(); });
+  document.addEventListener('click', (e) => { if (!e.target.closest('.mapa-buscador')) cerrarResultadosMapa(); });
 }
 
 function animarBarrasAlEntrar() {
@@ -1752,6 +1884,7 @@ async function init() {
   activarNavegacion(); // primero el menú, así anda aunque falle el mapa
   renderIntegrantes();
   activarBuscador();
+  activarBuscadorMapa();
   hydrateStore();
   inicializarMapa();
   animarBarrasAlEntrar();
