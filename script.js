@@ -1,1964 +1,1328 @@
 /* ============================================
-   SAN TELMO VERDE — LÓGICA (JS)
-   Estado centralizado + votación unificada
+   SAN TELMO VERDE — ESTILOS
+   Organizado por secciones: variables, base,
+   nav, hero, mapa, estadísticas, propuestas,
+   asistente IA, footer y responsive.
 ============================================ */
 
-const CENTRO_SAN_TELMO = [-34.6212, -58.3714];
-
-/* Fichas fijas del mapa (espacios verdes existentes e islas de calor).
-   Centralizadas acá (con id) para poder: 1) dibujar el marcador,
-   2) abrir su ficha de detalle al clickear el marcador, y
-   3) ubicarlas en el mapa desde un botón "Ver en el mapa". */
-const ESPACIOS_VERDES = [
-  { id: 'verde-lezama', lat: -34.6289, lng: -58.3697, simbolo: 'P', titulo: 'Parque Lezama', resumen: '7.2 ha · El más grande del barrio', detalle: 'El espacio verde más grande de San Telmo, con 7.2 hectáreas. Zona histórica con anfiteatro, el Museo Histórico Nacional y una gran variedad de árboles añosos.' },
-  { id: 'verde-dorrego', lat: -34.6212, lng: -58.3731, simbolo: '', titulo: 'Plazoleta Dorrego', resumen: '0.3 ha · Centro histórico', detalle: 'Plaza chica en pleno centro histórico de San Telmo, rodeada de anticuarios. Sede de la feria de los domingos.' },
-  { id: 'verde-humberto', lat: -34.6175, lng: -58.3720, simbolo: '', titulo: 'Plazoleta Calle Humberto', resumen: 'Pequeña plaza de barrio', detalle: 'Espacio verde chico sobre la calle Humberto Primo, de uso vecinal cotidiano.' },
-];
-
-const ISLAS_CALOR = [
-  { id: 'calor-norte', lat: -34.6165, lng: -58.3775, titulo: 'Isla de calor · Zona norte', resumen: '+3.2°C', detalle: 'Zona con muy poca cobertura verde y alta densidad de construcción, lo que eleva la temperatura superficial respecto al resto del barrio.' },
-  { id: 'calor-centro', lat: -34.6245, lng: -58.3715, titulo: 'Isla de calor · Zona central', resumen: '+2.8°C', detalle: 'Concentración de superficies de asfalto y hormigón sin arbolado que retienen calor durante el día y lo liberan de noche.' },
-  { id: 'calor-este', lat: -34.6195, lng: -58.3675, titulo: 'Isla de calor · Zona este', resumen: '+4.1°C', detalle: 'La zona con mayor diferencia de temperatura registrada del barrio, cerca de la avenida Paseo Colón, con escasa vegetación.' },
-];
-/* API_BASE vacío = rutas relativas ("/api/...").
-   Así el front pega siempre al MISMO host que lo sirvió, sea
-   http://localhost:3000, tu Codespace (*.app.github.dev) o
-   cualquier otro dominio público. NO hardcodear localhost acá. */
-const API_BASE = '';
-
-/* ── PEGÁ ACÁ tu Client ID de Google Cloud Console ──
-   Debe coincidir con data-client_id en index.html
-   Ejemplo: '123456789-abc.apps.googleusercontent.com' */
-const GOOGLE_CLIENT_ID = '238089660652-b04ml760v9nqbtnjuenubc5a1p1mla6r.apps.googleusercontent.com';
-
-/* Emails autorizados a moderar (coinciden con el email de Google al ingresar).
-   Agregá los del equipo. También podés usar el flag local stv_soy_mod=1 en consola. */
-const MODERADORES = [
-  'thiagovillagodoy@gmail.com',
-  // 'otro.moderador@gmail.com',
-];
-
-const KEYS = {
-  propuestas: 'stv_propuestas',
-  usuario: 'stv_usuario',
-  votos: 'stv_votos',
-  denuncias: 'stv_denuncias', // { [userId]: { [propuestaId]: true } }
-};
-
-const Store = {
-  propuestas: [],
-  usuario: null,
-  votosUsuario: new Set(),
-  marcadores: {},
-  marcadoresVerde: {},
-  marcadoresCalor: {},
-  marcadorTemporal: null,
-  modoUbicacion: false,
-  mapa: null,
-  capas: { verde: null, calor: null, prop: null },
-  filtros: { verde: true, calor: true, prop: true },
-};
-
-function loadJSON(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function saveJSON(key, value) {
-  localStorage.setItem(key, JSON.stringify(value));
-}
-
-function hydrateStore() {
-  Store.usuario = loadJSON(KEYS.usuario, null);
-  Store.propuestas = loadJSON(KEYS.propuestas, []);
-  syncVotosUsuarioFromStorage();
-}
-
-function persistPropuestas() {
-  saveJSON(KEYS.propuestas, Store.propuestas);
-}
-
-function persistUsuario() {
-  if (Store.usuario) saveJSON(KEYS.usuario, Store.usuario);
-  else localStorage.removeItem(KEYS.usuario);
-}
-
-function syncVotosUsuarioFromStorage() {
-  Store.votosUsuario = new Set();
-  if (!Store.usuario) return;
-  const all = loadJSON(KEYS.votos, {});
-  const mine = all[Store.usuario.id] || {};
-  Object.keys(mine).forEach((id) => {
-    if (mine[id]) Store.votosUsuario.add(String(id));
-  });
-}
-
-function persistVoto(propuestaId) {
-  if (!Store.usuario) return;
-  const all = loadJSON(KEYS.votos, {});
-  if (!all[Store.usuario.id]) all[Store.usuario.id] = {};
-  all[Store.usuario.id][String(propuestaId)] = true;
-  saveJSON(KEYS.votos, all);
-  Store.votosUsuario.add(String(propuestaId));
-}
-
-function quitarVotoLocal(propuestaId) {
-  if (!Store.usuario) return;
-  const all = loadJSON(KEYS.votos, {});
-  if (all[Store.usuario.id]) {
-    delete all[Store.usuario.id][String(propuestaId)];
-    saveJSON(KEYS.votos, all);
-  }
-  Store.votosUsuario.delete(String(propuestaId));
-}
-
-/** Lista completa de denuncias locales para el panel de moderación */
-function loadDenunciasRecords() {
-  const raw = loadJSON(KEYS.denuncias, []);
-  // Migrar formato viejo { userId: { propId: true } } → []
-  if (raw && !Array.isArray(raw) && typeof raw === 'object') {
-    saveJSON(KEYS.denuncias, []);
-    return [];
-  }
-  return Array.isArray(raw) ? raw : [];
-}
-
-function saveDenunciasRecords(list) {
-  saveJSON(KEYS.denuncias, list);
-}
-
-function yaDenuncie(propuestaId) {
-  if (!Store.usuario) return false;
-  const list = loadDenunciasRecords();
-  return list.some(
-    (d) =>
-      String(d.propuesta_id) === String(propuestaId) &&
-      (String(d.usuario_id) === String(Store.usuario.id) ||
-        d.email === Store.usuario.email) &&
-      d.estado !== 'descartada'
-  );
-}
-
-function marcarDenunciaLocal(propuestaId, motivo) {
-  if (!Store.usuario) return;
-  const list = loadDenunciasRecords();
-  // evitar duplicado activo
-  const exists = list.find(
-    (d) =>
-      String(d.propuesta_id) === String(propuestaId) &&
-      (String(d.usuario_id) === String(Store.usuario.id) || d.email === Store.usuario.email)
-  );
-  if (exists) {
-    exists.motivo = motivo || exists.motivo;
-    exists.estado = 'pendiente';
-    exists.updated_at = new Date().toISOString();
-  } else {
-    list.unshift({
-      id: 'den_' + Date.now().toString(36),
-      propuesta_id: String(propuestaId),
-      usuario_id: String(Store.usuario.id),
-      email: Store.usuario.email,
-      nombre: Store.usuario.nombre,
-      motivo: motivo || 'Sin motivo especificado',
-      estado: 'pendiente',
-      created_at: new Date().toISOString(),
-    });
-  }
-  saveDenunciasRecords(list);
-}
-
-function esModerador() {
-  if (!Store.usuario) return false;
-  if (localStorage.getItem('stv_soy_mod') === '1') return true;
-  const email = (Store.usuario.email || '').toLowerCase().trim();
-  return MODERADORES.some((m) => m && m.toLowerCase().trim() === email);
-}
-
-/* ── Panel de moderación ──
-   El backend (server.js) autoriza estas acciones validando el email
-   de moderador contra MODERADORES (env var) o el default en server.js.
-   Si acá pasás esModerador() pero el server responde 403, revisá que
-   tu email esté también en el servidor. */
-function emailModerador() {
-  return Store.usuario?.email || '';
-}
-
-function abrirModalModeracion() {
-  if (!esModerador()) return;
-  document.getElementById('modalModeracion')?.classList.add('active');
-  cargarDenunciasMod();
-  cargarPropuestasMod();
-}
-
-function cerrarModalModeracion() {
-  document.getElementById('modalModeracion')?.classList.remove('active');
-}
-
-function cambiarTabMod(btn) {
-  const tab = btn?.dataset?.tab;
-  if (!tab) return;
-  document.querySelectorAll('.mod-tab').forEach((b) => b.classList.toggle('active', b === btn));
-  document.getElementById('modTabDenuncias')?.classList.toggle('hidden', tab !== 'denuncias');
-  document.getElementById('modTabPropuestas')?.classList.toggle('hidden', tab !== 'propuestas');
-}
-
-async function cargarDenunciasMod() {
-  const cont = document.getElementById('modDenunciasList');
-  if (!cont) return;
-  cont.innerHTML = '<div class="mod-empty">Cargando…</div>';
-  try {
-    const res = await fetch(`${API_BASE}/api/mod/denuncias?email=${encodeURIComponent(emailModerador())}`);
-    if (!res.ok) throw new Error('No autorizado');
-    const denuncias = await res.json();
-    renderModDenuncias(denuncias);
-  } catch (_) {
-    cont.innerHTML = '<div class="mod-empty">No se pudieron cargar las denuncias. ¿Tu email está en MODERADORES del servidor?</div>';
-  }
-}
-
-function renderModDenuncias(denuncias) {
-  const cont = document.getElementById('modDenunciasList');
-  if (!cont) return;
-  if (!denuncias || denuncias.length === 0) {
-    cont.innerHTML = '<div class="mod-empty">No hay denuncias pendientes.</div>';
-    return;
-  }
-  cont.innerHTML = denuncias
-    .map(
-      (d) => `
-      <div class="mod-card">
-        <h4>${escapeHtml(d.titulo || 'Propuesta eliminada')}</h4>
-        <p><strong>Motivo:</strong> ${escapeHtml(d.motivo || 'Sin motivo')}</p>
-        <p><strong>Denunciante:</strong> ${escapeHtml(d.denunciante || 'Desconocido')}</p>
-        <div class="mod-meta">Propuesta #${escapeHtml(String(d.propuesta_id))} · ${escapeHtml(d.propuesta_estado || '')}</div>
-        <div class="mod-actions">
-          <button type="button" class="mod-btn mod-btn-archive" onclick="archivarDesdeDenuncia('${d.id}', '${d.propuesta_id}')">Archivar propuesta</button>
-          <button type="button" class="mod-btn mod-btn-ok" onclick="descartarDenuncia('${d.id}')">Descartar denuncia</button>
-          <button type="button" class="mod-btn mod-btn-danger" onclick="eliminarDenuncia('${d.id}')">Eliminar denuncia</button>
-        </div>
-      </div>`
-    )
-    .join('');
-}
-
-async function eliminarDenuncia(id) {
-  if (!confirm('¿Eliminar esta denuncia definitivamente? No se puede deshacer.')) return;
-  try {
-    await fetch(`${API_BASE}/api/mod/denuncias/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: emailModerador() }),
-    });
-  } catch (_) {}
-  cargarDenunciasMod();
-}
-
-async function descartarDenuncia(id) {
-  try {
-    await fetch(`${API_BASE}/api/mod/denuncias/${encodeURIComponent(id)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: emailModerador(), estado: 'descartada' }),
-    });
-  } catch (_) {}
-  cargarDenunciasMod();
-}
-
-async function archivarDesdeDenuncia(id, propuestaId) {
-  try {
-    await fetch(`${API_BASE}/api/mod/denuncias/${encodeURIComponent(id)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: emailModerador(), estado: 'revisada', propuesta_id: propuestaId }),
-    });
-  } catch (_) {}
-  cargarDenunciasMod();
-  cargarPropuestasMod();
-  await intentarCargarDesdeAPI();
-  renderAll();
-}
-
-async function cargarPropuestasMod() {
-  const cont = document.getElementById('modPropuestasList');
-  if (!cont) return;
-  cont.innerHTML = '<div class="mod-empty">Cargando…</div>';
-  try {
-    const res = await fetch(`${API_BASE}/api/mod/propuestas?email=${encodeURIComponent(emailModerador())}`);
-    if (!res.ok) throw new Error('No autorizado');
-    const propuestas = await res.json();
-    renderModPropuestas(propuestas);
-  } catch (_) {
-    cont.innerHTML = '<div class="mod-empty">No se pudieron cargar las propuestas. ¿Tu email está en MODERADORES del servidor?</div>';
-  }
-}
-
-/* Estado de selección múltiple en el panel de moderación */
-const ModSelect = {
-  ids: new Set(),
-  propuestasCache: [],
-};
-
-function actualizarContadorSeleccion() {
-  const n = ModSelect.ids.size;
-  const el = document.getElementById('modBulkCount');
-  if (el) el.textContent = n === 1 ? '1 seleccionada' : `${n} seleccionadas`;
-  const all = document.getElementById('modSelectAll');
-  if (all) {
-    const total = ModSelect.propuestasCache.length;
-    all.checked = total > 0 && n === total;
-    all.indeterminate = n > 0 && n < total;
-  }
-}
-
-function toggleSeleccionarPropuesta(id, checked) {
-  const sid = String(id);
-  if (checked) ModSelect.ids.add(sid);
-  else ModSelect.ids.delete(sid);
-  const card = document.querySelector(`.mod-card[data-id="${sid}"]`);
-  if (card) card.classList.toggle('selected', checked);
-  actualizarContadorSeleccion();
-}
-
-function toggleSeleccionarTodas(checked) {
-  ModSelect.ids.clear();
-  document.querySelectorAll('#modPropuestasList .mod-card-check').forEach((cb) => {
-    cb.checked = checked;
-    const id = cb.dataset.id;
-    if (checked && id) ModSelect.ids.add(String(id));
-    const card = cb.closest('.mod-card');
-    if (card) card.classList.toggle('selected', checked);
-  });
-  actualizarContadorSeleccion();
-}
-
-function idsSeleccionados() {
-  return [...ModSelect.ids];
-}
-
-function renderModPropuestas(propuestas) {
-  const cont = document.getElementById('modPropuestasList');
-  if (!cont) return;
-  ModSelect.propuestasCache = Array.isArray(propuestas) ? propuestas : [];
-  ModSelect.ids.clear();
-  const allCb = document.getElementById('modSelectAll');
-  if (allCb) {
-    allCb.checked = false;
-    allCb.indeterminate = false;
-  }
-  actualizarContadorSeleccion();
-
-  if (!propuestas || propuestas.length === 0) {
-    cont.innerHTML = '<div class="mod-empty">No hay propuestas todavía.</div>';
-    return;
-  }
-  cont.innerHTML = propuestas
-    .map((p) => {
-      const archivada = p.estado === 'Archivada';
-      const badge = archivada ? '<span class="mod-badge archivada">Archivada</span>' : `<span class="mod-badge">${escapeHtml(p.estado)}</span>`;
-      const accion = archivada
-        ? `<button type="button" class="mod-btn mod-btn-restore" onclick="restaurarPropuestaMod('${p.id}')">Restaurar</button>`
-        : `<button type="button" class="mod-btn mod-btn-archive" onclick="archivarPropuestaMod('${p.id}')">Archivar</button>`;
-      const eliminarBtn = `<button type="button" class="mod-btn mod-btn-danger" onclick="eliminarPropuestaMod('${p.id}')">Eliminar</button>`;
-      const banActivo = p.usuario_id && p.usuario_baneado_hasta
-        ? new Date(p.usuario_baneado_hasta).getTime() > Date.now()
-        : false;
-      const banBtn = p.usuario_id
-        ? (banActivo
-          ? `<button type="button" class="mod-btn mod-btn-unban" data-uid="${escapeHtml(String(p.usuario_id))}" data-unombre="${escapeHtml(p.nombre_usuario || 'Usuario')}" onclick="desbanearUsuarioMod(this.dataset.uid, this.dataset.unombre)">Desbanear autor</button>`
-          : `<button type="button" class="mod-btn mod-btn-ban" data-uid="${escapeHtml(String(p.usuario_id))}" data-unombre="${escapeHtml(p.nombre_usuario || 'Usuario')}" onclick="abrirModalBan(this.dataset.uid, this.dataset.unombre)">Banear autor</button>`)
-        : '';
-      return `
-      <div class="mod-card" data-id="${escapeHtml(String(p.id))}" data-usuario-id="${escapeHtml(String(p.usuario_id || ''))}" data-estado="${escapeHtml(p.estado || '')}">
-        <input type="checkbox" class="mod-card-check" data-id="${escapeHtml(String(p.id))}"
-          onchange="toggleSeleccionarPropuesta('${p.id}', this.checked)" title="Seleccionar propuesta" />
-        <h4>${escapeHtml(p.titulo)} ${badge}</h4>
-        <p>${escapeHtml(p.descripcion || '')}</p>
-        <div class="mod-meta">${escapeHtml(p.direccion || '')} · ${escapeHtml(p.nombre_usuario || 'Anonimo')} · ${p.votos || 0} votos</div>
-        <div class="mod-actions">${accion}${eliminarBtn}${banBtn}</div>
-      </div>`;
-    })
-    .join('');
-}
-
-async function archivarPropuestaMod(id) {
-  try {
-    await fetch(`${API_BASE}/api/mod/propuestas/${encodeURIComponent(id)}/archivar`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: emailModerador() }),
-    });
-  } catch (_) {}
-  cargarPropuestasMod();
-  await intentarCargarDesdeAPI();
-  renderAll();
-}
-
-async function restaurarPropuestaMod(id) {
-  try {
-    await fetch(`${API_BASE}/api/mod/propuestas/${encodeURIComponent(id)}/restaurar`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: emailModerador() }),
-    });
-  } catch (_) {}
-  cargarPropuestasMod();
-  await intentarCargarDesdeAPI();
-  renderAll();
-}
-
-async function eliminarPropuestaMod(id) {
-  if (!confirm('¿Eliminar esta propuesta definitivamente? También se borran sus votos y denuncias asociadas. No se puede deshacer.')) return;
-  try {
-    await fetch(`${API_BASE}/api/mod/propuestas/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: emailModerador() }),
-    });
-  } catch (_) {}
-  cargarPropuestasMod();
-  cargarDenunciasMod();
-  await intentarCargarDesdeAPI();
-  renderAll();
-}
-
-/** Acciones masivas sobre las propuestas seleccionadas en el panel */
-async function accionesMasivas(accion) {
-  const ids = idsSeleccionados();
-  if (!ids.length) {
-    alert('Seleccioná al menos una propuesta con los checkboxes.');
-    return;
-  }
-
-  if (accion === 'eliminar') {
-    if (!confirm(`¿Eliminar ${ids.length} propuesta(s) definitivamente? No se puede deshacer.`)) return;
-  }
-  if (accion === 'banear') {
-    const autores = new Map();
-    ids.forEach((id) => {
-      const card = document.querySelector(`.mod-card[data-id="${id}"]`);
-      const uid = card?.dataset?.usuarioId;
-      if (uid) {
-        const nombre = card.querySelector('.mod-meta')?.textContent?.split('·')[1]?.trim() || 'Usuario';
-        autores.set(String(uid), nombre);
-      }
-    });
-    if (!autores.size) {
-      alert('Ninguna de las propuestas seleccionadas tiene un autor registrado para banear.');
-      return;
-    }
-    abrirModalBanMulti([...autores.keys()], [...autores.values()]);
-    return;
-  }
-
-  const email = emailModerador();
-  const promesas = ids.map(async (id) => {
-    try {
-      if (accion === 'archivar') {
-        await fetch(`${API_BASE}/api/mod/propuestas/${encodeURIComponent(id)}/archivar`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email }),
-        });
-      } else if (accion === 'restaurar') {
-        await fetch(`${API_BASE}/api/mod/propuestas/${encodeURIComponent(id)}/restaurar`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email }),
-        });
-      } else if (accion === 'eliminar') {
-        await fetch(`${API_BASE}/api/mod/propuestas/${encodeURIComponent(id)}`, {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email }),
-        });
-      }
-    } catch (_) {}
-  });
-  await Promise.all(promesas);
-  ModSelect.ids.clear();
-  cargarPropuestasMod();
-  if (accion === 'eliminar') cargarDenunciasMod();
-  await intentarCargarDesdeAPI();
-  renderAll();
-}
-
-/* ── Ban / timeout de usuarios ── */
-let _banPendiente = null; // { usuarioIds: string[], nombres: string[] }
-
-function abrirModalBan(usuarioId, nombre) {
-  if (!usuarioId) return;
-  _banPendiente = { usuarioIds: [String(usuarioId)], nombres: [nombre || 'Usuario'] };
-  const hint = document.getElementById('banDuracionHint');
-  if (hint) hint.textContent = `Banear a ${nombre || 'Usuario'} por contenido no serio. Elegí la duración:`;
-  document.getElementById('modalBanDuracion')?.classList.add('active');
-}
-
-function abrirModalBanMulti(usuarioIds, nombres) {
-  _banPendiente = { usuarioIds: usuarioIds.map(String), nombres: nombres || [] };
-  const hint = document.getElementById('banDuracionHint');
-  const n = usuarioIds.length;
-  if (hint) hint.textContent = `Banear a ${n} autor(es) por contenido no serio. Elegí la duración:`;
-  document.getElementById('modalBanDuracion')?.classList.add('active');
-}
-
-function cerrarModalBan() {
-  document.getElementById('modalBanDuracion')?.classList.remove('active');
-  _banPendiente = null;
-}
-
-function formatearDuracionBan(minutos) {
-  if (minutos < 60) return `${minutos} minuto${minutos === 1 ? '' : 's'}`;
-  if (minutos < 1440) {
-    const h = Math.round(minutos / 60);
-    return `${h} hora${h === 1 ? '' : 's'}`;
-  }
-  const d = Math.round(minutos / 1440);
-  return `${d} día${d === 1 ? '' : 's'}`;
-}
-
-async function confirmarBan(minutos) {
-  if (!_banPendiente || !_banPendiente.usuarioIds.length) {
-    cerrarModalBan();
-    return;
-  }
-  const email = emailModerador();
-  const ids = [..._banPendiente.usuarioIds];
-  cerrarModalBan();
-  const resultados = await Promise.all(
-    ids.map(async (uid) => {
-      try {
-        const res = await fetch(`${API_BASE}/api/mod/usuarios/${encodeURIComponent(uid)}/banear`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, minutos }),
-        });
-        return res.ok;
-      } catch (_) {
-        return false;
-      }
-    })
-  );
-  const ok = resultados.filter(Boolean).length;
-  alert(
-    ok
-      ? `Se baneó a ${ok} usuario(s) por ${formatearDuracionBan(minutos)}.`
-      : 'No se pudo aplicar el ban. Verificá que el servidor esté en marcha y que tu email esté en MODERADORES.'
-  );
-  await cargarPropuestasMod();
-}
-
-/** Quita inmediatamente el ban activo de un usuario desde el panel de moderación. */
-async function desbanearUsuarioMod(usuarioId, nombre) {
-  if (!usuarioId) return;
-  const nombreSeguro = nombre || 'este usuario';
-  if (!confirm(`¿Desbanear a ${nombreSeguro}? Podrá volver a publicar inmediatamente.`)) return;
-
-  try {
-    const res = await fetch(`${API_BASE}/api/mod/usuarios/${encodeURIComponent(usuarioId)}/desbanear`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: emailModerador() }),
-    });
-
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      alert(data.error || 'No se pudo desbanear al usuario.');
-      return;
-    }
-
-    if (Store.usuario && String(Store.usuario.id) === String(usuarioId)) {
-      Store.usuario.baneado_hasta = null;
-      persistUsuario();
-      actualizarBannerBan();
-    }
-
-    alert(`${nombreSeguro} fue desbaneado correctamente.`);
-    await cargarPropuestasMod();
-  } catch (_) {
-    alert('No se pudo desbanear al usuario. Verificá que el servidor esté en marcha.');
-  }
-}
-
-/** Texto legible del tiempo restante de ban */
-function textoTiempoRestanteBan(hastaISO) {
-  if (!hastaISO) return '';
-  const hasta = new Date(hastaISO).getTime();
-  const ahora = Date.now();
-  const ms = hasta - ahora;
-  if (ms <= 0) return '';
-  const min = Math.ceil(ms / 60000);
-  if (min < 60) return `${min} minuto${min === 1 ? '' : 's'}`;
-  const horas = Math.floor(min / 60);
-  const restoMin = min % 60;
-  if (horas < 24) {
-    return restoMin > 0
-      ? `${horas} hora${horas === 1 ? '' : 's'} y ${restoMin} min`
-      : `${horas} hora${horas === 1 ? '' : 's'}`;
-  }
-  const dias = Math.floor(horas / 24);
-  const restoH = horas % 24;
-  return restoH > 0
-    ? `${dias} día${dias === 1 ? '' : 's'} y ${restoH} h`
-    : `${dias} día${dias === 1 ? '' : 's'}`;
-}
-
-function usuarioEstaBaneado() {
-  const hasta = Store.usuario?.baneado_hasta;
-  if (!hasta) return false;
-  return new Date(hasta).getTime() > Date.now();
-}
-
-function actualizarBannerBan() {
-  const banner = document.getElementById('banBanner');
-  const msg = document.getElementById('banBannerMsg');
-  const wrap = document.getElementById('propuestaFormWrap');
-  const campos = document.getElementById('formPropuestaCampos');
-  if (!banner || !msg) return;
-
-  if (usuarioEstaBaneado()) {
-    const tiempo = textoTiempoRestanteBan(Store.usuario.baneado_hasta);
-    msg.textContent = `Estás baneado por ${tiempo || 'un tiempo'}, por favor, retírese y vuelva a intentarlo más tarde.`;
-    banner.classList.remove('hidden');
-    wrap?.classList.add('form-propuesta-bloqueada');
-    if (campos) campos.setAttribute('aria-disabled', 'true');
-  } else {
-    banner.classList.add('hidden');
-    wrap?.classList.remove('form-propuesta-bloqueada');
-    if (campos) campos.removeAttribute('aria-disabled');
-    if (Store.usuario) Store.usuario.baneado_hasta = null;
-  }
-}
-
-/** Consulta al servidor el estado de ban del usuario logueado */
-async function refrescarEstadoBan() {
-  if (!Store.usuario) {
-    actualizarBannerBan();
-    return;
-  }
-  try {
-    const q = new URLSearchParams();
-    if (Store.usuario.email) q.set('email', Store.usuario.email);
-    if (Store.usuario.id) q.set('id', String(Store.usuario.id));
-    if (Store.usuario.google_id) q.set('google_id', String(Store.usuario.google_id));
-    const res = await fetch(`${API_BASE}/api/usuarios/estado-ban?${q.toString()}`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.baneado && data.baneado_hasta) {
-        Store.usuario.baneado_hasta = data.baneado_hasta;
-      } else {
-        Store.usuario.baneado_hasta = null;
-      }
-    }
-  } catch (_) {}
-  actualizarBannerBan();
-}
-
-/** ¿La propuesta es del usuario logueado? (por usuario_id o email/nombre de creador) */
-function esPropuestaMia(p) {
-  if (!Store.usuario || !p) return false;
-  if (p.usuario_id && String(p.usuario_id) === String(Store.usuario.id)) return true;
-  if (p.usuario_id && Store.usuario.google_id && String(p.usuario_id) === String(Store.usuario.google_id)) return true;
-  // Fallback: mismo nombre de usuario guardado al crear (sesión local)
-  if (p.nombre_usuario && Store.usuario.nombre && p.nombre_usuario === Store.usuario.nombre) {
-    // solo si además hay match de email implícito en sesión reciente — preferimos ids
-    if (p.usuario_id == null || p.usuario_id === '' || String(p.usuario_id) === String(Store.usuario.id)) return true;
-  }
-  return false;
-}
-
-const select = {
-  isLoggedIn: () => !!Store.usuario,
-  yaVoto: (id) => Store.votosUsuario.has(String(id)),
-  propuestaById: (id) => Store.propuestas.find((p) => String(p.id) === String(id)) || null,
-  propuestasActivas: () => Store.propuestas.filter((p) => (p.estado || '') !== 'Archivada'),
-  topPropuestas: (n = 3) =>
-    [...select.propuestasActivas()].sort((a, b) => (b.votos || 0) - (a.votos || 0)).slice(0, n),
-};
-
-function escapeHtml(str) {
-  if (str == null) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-function formatearFecha(iso) {
-  if (!iso) return 'ahora';
-  try {
-    const d = new Date(iso);
-    const diff = Date.now() - d.getTime();
-    if (diff < 60000) return 'ahora';
-    if (diff < 3600000) return Math.floor(diff / 60000) + ' min';
-    if (diff < 86400000) return Math.floor(diff / 3600000) + ' h';
-    return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
-  } catch {
-    return '';
-  }
-}
-
-function estadoClass(estado) {
-  const e = (estado || '').toLowerCase();
-  if (e.includes('revis')) return 'estado-revision';
-  if (e.includes('aprob')) return 'estado-aprobada';
-  return 'estado-nueva';
-}
-
-function normalizePropuesta(p) {
-  return {
-    id: String(p.id),
-    titulo: p.titulo || '',
-    direccion: p.direccion || '',
-    descripcion: p.descripcion || '',
-    tipo: p.tipo || 'Plaza de bolsillo',
-    votos: Number(p.votos) >= 0 ? Number(p.votos) : 1,
-    nombre_usuario: p.nombre_usuario || 'Anónimo',
-    estado: p.estado || 'Nueva',
-    latitud: p.latitud != null && p.latitud !== '' ? Number(p.latitud) : null,
-    longitud: p.longitud != null && p.longitud !== '' ? Number(p.longitud) : null,
-    created_at: p.created_at || new Date().toISOString(),
-    usuario_id: p.usuario_id != null ? String(p.usuario_id) : null,
-  };
-}
-
-function setUsuario(usuario) {
-  Store.usuario = usuario;
-  persistUsuario();
-  syncVotosUsuarioFromStorage();
-  renderAuthUI();
-  renderAll();
-  refrescarEstadoBan();
-  // Google puede cargar async; reintentar init del botón
-  window.addEventListener('load', () => setTimeout(inicializarGoogleButton, 300));
-  setTimeout(inicializarGoogleButton, 800);
-}
-
-/**
- * Callback de Google Identity Services (data-callback en index.html).
- * Recibe el credential JWT con tu nombre y email reales de Google.
- */
-async function manejarRespuestaGoogle(response) {
-  if (!response || !response.credential) {
-    alert('No se recibió credencial de Google. Revisá el Client ID.');
-    return;
-  }
-
-  const payload = decodeJwtPayload(response.credential);
-  if (!payload || !payload.sub) {
-    alert('No se pudo leer el token de Google.');
-    return;
-  }
-
-  // Datos reales de tu cuenta Google
-  const perfil = {
-    google_id: String(payload.sub),
-    email: payload.email || '',
-    nombre: payload.name || payload.given_name || payload.email || 'Usuario Google',
-    picture: payload.picture || null,
-    credential: response.credential,
-  };
-
-  // Registrar / sincronizar en el servidor (si está corriendo)
-  let usuarioId = perfil.google_id;
-  try {
-    const res = await fetch(`${API_BASE}/api/auth/google`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        credential: response.credential,
-        google_id: perfil.google_id,
-        email: perfil.email,
-        nombre: perfil.nombre,
-      }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.id) usuarioId = String(data.id);
-      if (data && data.nombre) perfil.nombre = data.nombre;
-      if (data && data.email) perfil.email = data.email;
-    }
-  } catch (_) {
-    /* sin API: sesión solo en el navegador, con datos reales de Google */
-  }
-
-  setUsuario({
-    id: String(usuarioId),
-    nombre: perfil.nombre,
-    email: perfil.email,
-    google_id: perfil.google_id,
-    picture: perfil.picture,
-  });
-  cerrarModalLogin();
-}
-
-/** Decodifica el payload del JWT de Google (solo lectura; la verificación seria va en el server). */
-function decodeJwtPayload(token) {
-  try {
-    const part = token.split('.')[1];
-    const json = atob(part.replace(/-/g, '+').replace(/_/g, '/'));
-    return JSON.parse(decodeURIComponent(
-      json.split('').map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
-    ));
-  } catch {
-    try {
-      return JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-    } catch {
-      return null;
-    }
-  }
-}
-
-/** Inicializa el botón de Google cuando el modal se abre (por si el script GSI cargó tarde). */
-function inicializarGoogleButton() {
-  if (typeof google === 'undefined' || !google.accounts || !google.accounts.id) return;
-  if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID.startsWith('PEGAR_AQUI')) {
-    console.warn('Configurá GOOGLE_CLIENT_ID en script.js e index.html');
-    return;
-  }
-  try {
-    google.accounts.id.initialize({
-      client_id: GOOGLE_CLIENT_ID,
-      callback: manejarRespuestaGoogle,
-      context: 'signin',
-      ux_mode: 'popup',
-      auto_select: false,
-    });
-    const wrap = document.getElementById('googleBtnWrap');
-    if (wrap) {
-      // Limpiar renders previos y volver a pintar el botón
-      const host = document.createElement('div');
-      host.id = 'g_id_signin_host';
-      wrap.querySelectorAll('#g_id_signin_host, .g_id_signin').forEach((n) => n.remove());
-      wrap.appendChild(host);
-      google.accounts.id.renderButton(host, {
-        type: 'standard',
-        theme: 'outline',
-        size: 'large',
-        text: 'signin_with',
-        shape: 'rectangular',
-        logo_alignment: 'left',
-        width: 320,
-      });
-    }
-    const hint = document.getElementById('googleConfigHint');
-    if (hint) hint.classList.add('hidden');
-  } catch (e) {
-    console.error('Error inicializando Google Sign-In:', e);
-  }
-}
-
-function cerrarSesion() {
-  setUsuario(null);
-}
-
-function abrirModalLogin() {
-  document.getElementById('modalLogin')?.classList.add('active');
-  // Asegurar que el botón de Google se renderice al abrir
-  setTimeout(inicializarGoogleButton, 50);
-}
-
-function cerrarModalLogin() {
-  document.getElementById('modalLogin')?.classList.remove('active');
-}
-
-function renderAuthUI() {
-  const nav = document.getElementById('navAuth');
-  const banner = document.getElementById('authRequiredBanner');
-  const campos = document.getElementById('formPropuestaCampos');
-  if (!nav) return;
-
-  if (Store.usuario) {
-    const avatar = Store.usuario.picture
-      ? `<img class="nav-avatar" src="${escapeHtml(Store.usuario.picture)}" alt="" referrerpolicy="no-referrer">`
-      : '';
-    const modBtn = esModerador()
-      ? `<button type="button" class="btn-mod" onclick="abrirModalModeracion()" title="Panel de moderación">⚖️ Mod</button>`
-      : '';
-    nav.innerHTML = `
-      <div class="nav-user">
-        ${modBtn}
-        ${avatar}
-        <span class="nav-user-name" title="${escapeHtml(Store.usuario.email)}">${escapeHtml(Store.usuario.nombre)}</span>
-        <button type="button" class="btn-auth btn-auth-out" onclick="cerrarSesion()">Salir</button>
-      </div>`;
-    banner?.classList.add('hidden');
-    campos?.classList.remove('form-bloqueado');
-  } else {
-    nav.innerHTML = `
-      <button type="button" class="btn-auth" onclick="abrirModalLogin()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        Ingresar
-      </button>`;
-    banner?.classList.remove('hidden');
-    campos?.classList.add('form-bloqueado');
-  }
-}
-
-async function votarPropuesta(id) {
-  if (!select.isLoggedIn()) {
-    abrirModalLogin();
-    return { ok: false, reason: 'auth' };
-  }
-
-  const pid = String(id);
-  const p = select.propuestaById(pid);
-  if (!p) return { ok: false, reason: 'not_found' };
-
-  const bodyUser = {
-    usuario_id: Store.usuario.id,
-    email: Store.usuario.email,
-    google_id: Store.usuario.google_id,
-  };
-
-  // Si ya votó → desvotar
-  if (select.yaVoto(pid)) {
-    p.votos = Math.max(0, (p.votos || 1) - 1);
-    quitarVotoLocal(pid);
-    persistPropuestas();
-    try {
-      const res = await fetch(`${API_BASE}/api/propuestas/${encodeURIComponent(pid)}/desvotar`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyUser),
-      });
-      if (res.ok) {
-        const saved = await res.json();
-        if (saved && typeof saved.votos === 'number') p.votos = saved.votos;
-        persistPropuestas();
-      }
-    } catch (_) {}
-    renderAll();
-    return { ok: true, unvoted: true, propuesta: p };
-  }
-
-  // Votar
-  p.votos = (p.votos || 0) + 1;
-  persistVoto(pid);
-  persistPropuestas();
-
-  try {
-    const res = await fetch(`${API_BASE}/api/propuestas/${encodeURIComponent(pid)}/votar`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(bodyUser),
-    });
-    if (res.ok) {
-      const saved = await res.json();
-      if (saved && typeof saved.votos === 'number') p.votos = saved.votos;
-      persistPropuestas();
-    }
-  } catch (_) {}
-
-  renderAll();
-  return { ok: true, propuesta: p };
-}
-
-async function eliminarPropuesta(id) {
-  if (!select.isLoggedIn()) {
-    abrirModalLogin();
-    return;
-  }
-  const pid = String(id);
-  const p = select.propuestaById(pid);
-  if (!p) return;
-  if (!esPropuestaMia(p)) {
-    alert('Solo podés eliminar tus propias propuestas.');
-    return;
-  }
-  if (!confirm('¿Eliminar esta propuesta? Esta acción no se puede deshacer.')) return;
-
-  Store.propuestas = Store.propuestas.filter((x) => String(x.id) !== pid);
-  quitarVotoLocal(pid);
-  persistPropuestas();
-
-  try {
-    await fetch(`${API_BASE}/api/propuestas/${encodeURIComponent(pid)}`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        usuario_id: Store.usuario.id,
-        email: Store.usuario.email,
-        google_id: Store.usuario.google_id,
-      }),
-    });
-  } catch (_) {}
-
-  cerrarMenusPropuesta();
-  renderAll();
-}
-
-async function denunciarPropuesta(id) {
-  if (!select.isLoggedIn()) {
-    abrirModalLogin();
-    return;
-  }
-  const pid = String(id);
-  const p = select.propuestaById(pid);
-  if (!p) return;
-  if (esPropuestaMia(p)) {
-    alert('No podés denunciar tu propia propuesta. Si te equivocaste, eliminála.');
-    return;
-  }
-  if (yaDenuncie(pid)) {
-    alert('Ya denunciaste esta propuesta. Gracias, el equipo la revisará.');
-    cerrarMenusPropuesta();
-    return;
-  }
-
-  const motivo = prompt(
-    '¿Por qué denunciás esta propuesta?\n(Ej: contenido ofensivo, spam, datos falsos, fuera de tema)',
-    ''
-  );
-  if (motivo === null) return; // canceló
-  const motivoTrim = (motivo || '').trim() || 'Sin motivo especificado';
-
-  marcarDenunciaLocal(pid, motivoTrim);
-
-  try {
-    await fetch(`${API_BASE}/api/propuestas/${encodeURIComponent(pid)}/denunciar`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        usuario_id: Store.usuario.id,
-        email: Store.usuario.email,
-        google_id: Store.usuario.google_id,
-        motivo: motivoTrim,
-      }),
-    });
-  } catch (_) {}
-
-  cerrarMenusPropuesta();
-  alert('Denuncia registrada. Gracias por ayudar a cuidar la comunidad.');
-  renderAll();
-}
-
-function toggleMenuPropuesta(btn, event) {
-  if (event) {
-    event.preventDefault();
-    event.stopPropagation();
-  }
-  const menu = btn.parentElement.querySelector('.pcard-menu');
-  const wasOpen = menu && menu.classList.contains('open');
-  cerrarMenusPropuesta();
-  if (menu && !wasOpen) menu.classList.add('open');
-}
-
-function cerrarMenusPropuesta() {
-  document.querySelectorAll('.pcard-menu.open').forEach((m) => m.classList.remove('open'));
-}
-
-function upsertPropuesta(raw) {
-  const p = normalizePropuesta(raw);
-  const idx = Store.propuestas.findIndex((x) => String(x.id) === p.id);
-  if (idx >= 0) Store.propuestas[idx] = { ...Store.propuestas[idx], ...p };
-  else Store.propuestas.unshift(p);
-  persistPropuestas();
-  return p;
-}
-
-async function crearPropuesta(datos) {
-  if (!select.isLoggedIn()) {
-    abrirModalLogin();
-    return null;
-  }
-  await refrescarEstadoBan();
-  if (usuarioEstaBaneado()) {
-    actualizarBannerBan();
-    const tiempo = textoTiempoRestanteBan(Store.usuario.baneado_hasta);
-    alert(`Estás baneado por ${tiempo || 'un tiempo'}, por favor, retírese y vuelva a intentarlo más tarde.`);
-    return null;
-  }
-
-  const { titulo, direccion, descripcion, tipo, latitud, longitud } = datos;
-  if (!titulo || !direccion) {
-    alert('Completá al menos la dirección y el título.');
-    return null;
-  }
-  if (latitud == null || longitud == null || Number.isNaN(latitud) || Number.isNaN(longitud)) {
-    alert('Elegí la ubicación en el mapa con el botón «Elegir en el mapa».');
-    return null;
-  }
-
-  const draft = normalizePropuesta({
-    id: 'local_' + Date.now().toString(36),
-    titulo,
-    direccion,
-    descripcion,
-    tipo,
-    votos: 1,
-    nombre_usuario: Store.usuario.nombre,
-    estado: 'Nueva',
-    latitud,
-    longitud,
-    created_at: new Date().toISOString(),
-    usuario_id: Store.usuario.id,
-  });
-
-  persistVoto(draft.id);
-
-  try {
-    const res = await fetch(`${API_BASE}/api/propuestas`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...draft, usuario: Store.usuario }),
-    });
-    if (res.status === 403) {
-      const err = await res.json().catch(() => ({}));
-      if (err.baneado_hasta) {
-        Store.usuario.baneado_hasta = err.baneado_hasta;
-        actualizarBannerBan();
-      }
-      const tiempo = textoTiempoRestanteBan(err.baneado_hasta || Store.usuario?.baneado_hasta);
-      alert(err.error || `Estás baneado por ${tiempo || 'un tiempo'}, por favor, retírese y vuelva a intentarlo más tarde.`);
-      return null;
-    }
-    if (res.ok) {
-      const saved = await res.json();
-      if (saved?.id) {
-        const oldId = draft.id;
-        draft.id = String(saved.id);
-        if (typeof saved.votos === 'number') draft.votos = saved.votos;
-        if (Store.votosUsuario.has(oldId)) {
-          Store.votosUsuario.delete(oldId);
-          persistVoto(draft.id);
-        }
-      }
-    }
-  } catch (_) {}
-
-  upsertPropuesta(draft);
-  clearMarcadorTemporal();
-  renderAll();
-  return draft;
-}
-
-function crearIcono(tipo, simbolo = '') {
-  return L.divIcon({
-    className: '',
-    html: `<div class="mapa-marcador ${tipo}">${simbolo}</div>`,
-    iconSize: [18, 18],
-    iconAnchor: [9, 9],
-    popupAnchor: [0, -10],
-  });
-}
-
-function popupPropuestaHTML(p) {
-  const voted = select.yaVoto(p.id);
-  return `
-    <strong>${escapeHtml(p.titulo)}</strong><br>
-    <span style="font-size:0.75rem;color:#4A5568">${escapeHtml(p.direccion)}</span>
-    <div class="popup-votos">
-      <button type="button" class="votar-btn ${voted ? 'voted' : ''}"
-        onclick="votarPropuesta('${escapeHtml(p.id)}')"
-        title="${voted ? 'Quitar tu voto' : 'Sumar un voto'}">↑</button>
-      <span>${p.votos} voto${p.votos === 1 ? '' : 's'}</span>
-    </div>
-    <button type="button" class="popup-vermas-btn" onclick="abrirDetallePropuesta('${escapeHtml(p.id)}')">Ver más información →</button>
-  `;
-}
-
-function popupFichaHTML(f, tipo) {
-  return `
-    <strong>${escapeHtml(f.titulo)}</strong><br>
-    <span style="font-size:0.75rem;color:#4A5568">${escapeHtml(f.resumen)}</span>
-    <button type="button" class="popup-vermas-btn" onclick="abrirDetalleFicha('${tipo}', '${escapeHtml(f.id)}')">Ver más información →</button>
-  `;
-}
-
-function clearMarcadoresPropuestas() {
-  Object.values(Store.marcadores).forEach((m) => {
-    try { Store.capas.prop?.removeLayer(m); } catch (_) {}
-  });
-  Store.marcadores = {};
-}
-
-function clearMarcadorTemporal() {
-  if (Store.marcadorTemporal && Store.mapa) {
-    try { Store.mapa.removeLayer(Store.marcadorTemporal); } catch (_) {}
-  }
-  Store.marcadorTemporal = null;
-}
-
-function syncMarcadoresDesdeStore() {
-  clearMarcadoresPropuestas();
-  if (!Store.capas.prop) return;
-  select.propuestasActivas().forEach((p) => {
-    if (p.latitud == null || p.longitud == null) return;
-    const marker = L.marker([p.latitud, p.longitud], { icon: crearIcono('prop', '★') })
-      .bindPopup(popupPropuestaHTML(p))
-      .addTo(Store.capas.prop);
-    Store.marcadores[p.id] = marker;
-  });
-}
-
-function inicializarMapa() {
-  Store.mapa = L.map('map').setView(CENTRO_SAN_TELMO, 15);
-  L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png?api_key=c016fa8b-688d-42ab-bde9-1159cfe1a15d', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    maxZoom: 19,
-  }).addTo(Store.mapa);
-
-  Store.capas.verde = L.layerGroup().addTo(Store.mapa);
-  Store.capas.calor = L.layerGroup().addTo(Store.mapa);
-  Store.capas.prop = L.layerGroup().addTo(Store.mapa);
-
-  ESPACIOS_VERDES.forEach((f) => {
-    const marker = L.marker([f.lat, f.lng], { icon: crearIcono('verde', f.simbolo || '') })
-      .bindPopup(popupFichaHTML(f, 'verde'))
-      .addTo(Store.capas.verde);
-    Store.marcadoresVerde[f.id] = marker;
-  });
-
-  ISLAS_CALOR.forEach((f) => {
-    const marker = L.marker([f.lat, f.lng], { icon: crearIcono('calor', '!') })
-      .bindPopup(popupFichaHTML(f, 'calor'))
-      .addTo(Store.capas.calor);
-    Store.marcadoresCalor[f.id] = marker;
-  });
-
-  Store.mapa.on('click', onMapClick);
-}
-
-function onMapClick(e) {
-  if (!Store.modoUbicacion || !Store.mapa) return;
-  const { lat, lng } = e.latlng;
-  document.getElementById('inputLat').value = lat.toFixed(6);
-  document.getElementById('inputLng').value = lng.toFixed(6);
-  const texto = document.getElementById('ubicacionTexto');
-  if (texto) {
-    texto.textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-    texto.classList.add('marcada');
-  }
-  clearMarcadorTemporal();
-  Store.marcadorTemporal = L.marker([lat, lng], { icon: crearIcono('prop', '★') }).addTo(Store.mapa);
-  cancelarModoUbicacion();
-  mostrarVista('propuestas'); // volvemos al formulario con la ubicación ya cargada
-}
-
-function activarModoUbicacion() {
-  if (!select.isLoggedIn()) {
-    abrirModalLogin();
-    return;
-  }
-  Store.modoUbicacion = true;
-  document.getElementById('modoUbicacionBanner')?.classList.remove('hidden');
-  document.getElementById('map')?.classList.add('cursor-crosshair');
-  mostrarVista('mapa');
-}
-
-function cancelarModoUbicacion() {
-  Store.modoUbicacion = false;
-  document.getElementById('modoUbicacionBanner')?.classList.add('hidden');
-  document.getElementById('map')?.classList.remove('cursor-crosshair');
-}
-
-function filtrar(tipo, boton) {
-  Store.filtros[tipo] = !Store.filtros[tipo];
-  boton.classList.toggle('active', Store.filtros[tipo]);
-  const capa = Store.capas[tipo];
-  if (!capa || !Store.mapa) return;
-  if (Store.filtros[tipo]) capa.addTo(Store.mapa);
-  else Store.mapa.removeLayer(capa);
-}
-
-function tarjetaPropuestaHTML(p) {
-  const voted = select.yaVoto(p.id);
-  const mia = esPropuestaMia(p);
-  const denunciada = yaDenuncie(p.id);
-  const menuItems = mia
-    ? `<button type="button" class="pcard-menu-item danger" onclick="eliminarPropuesta('${escapeHtml(p.id)}')">🗑️ Eliminar propuesta</button>`
-    : `<button type="button" class="pcard-menu-item" onclick="denunciarPropuesta('${escapeHtml(p.id)}')" ${denunciada ? 'disabled' : ''}>
-         🚩 ${denunciada ? 'Ya denunciada' : 'Denunciar'}
-       </button>`;
-
-  return `
-    <div class="propuesta-card" data-id="${escapeHtml(p.id)}">
-      <div class="pcard-header">
-        <span class="pcard-tipo">${escapeHtml(p.tipo)}</span>
-        <div class="pcard-actions">
-          <div class="pcard-votos">
-            <button type="button" class="votar-btn ${voted ? 'voted' : ''}"
-              onclick="votarPropuesta('${escapeHtml(p.id)}')"
-              title="${voted ? 'Quitar tu voto' : 'Sumar un voto'}">↑</button>
-            <span class="voto-count">${p.votos}</span>
-          </div>
-          <div class="pcard-menu-wrap">
-            <button type="button" class="pcard-menu-btn" aria-label="Más opciones"
-              onclick="toggleMenuPropuesta(this, event)">⋯</button>
-            <div class="pcard-menu">${menuItems}</div>
-          </div>
-        </div>
-      </div>
-      <div class="pcard-titulo">${escapeHtml(p.titulo)} — ${escapeHtml(p.direccion)}</div>
-      <div class="pcard-desc">${escapeHtml(p.descripcion || 'Sin descripción adicional.')}</div>
-      <div class="pcard-footer">
-        <span class="pcard-usuario">${escapeHtml(p.nombre_usuario)} · ${formatearFecha(p.created_at)}</span>
-        <span class="pcard-estado ${estadoClass(p.estado)}">${escapeHtml(p.estado || 'Nueva')}</span>
-      </div>
-      ${p.latitud != null && p.longitud != null
-        ? `<button type="button" class="pcard-ver-mapa" onclick="irAMapa(${p.latitud}, ${p.longitud}, 'prop', '${escapeHtml(p.id)}')">📍 Ver en el mapa</button>`
-        : ''}
-    </div>
-  `;
-}
-
-// ——— Buscador de propuestas ———
-const FiltroProp = { texto: '', tipo: '' };
-
-// Minúsculas y sin tildes: "plaza" encuentra "Plaza", "jardin" encuentra "Jardín"
-function normalizarBusqueda(s) {
-  return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-}
-
-function propuestaCoincide(p) {
-  if (FiltroProp.tipo && p.tipo !== FiltroProp.tipo) return false;
-  const terminos = normalizarBusqueda(FiltroProp.texto).split(/\s+/).filter(Boolean);
-  if (terminos.length === 0) return true;
-  const pajar = normalizarBusqueda([p.titulo, p.direccion, p.descripcion, p.nombre_usuario, p.tipo, p.estado].join(' '));
-  return terminos.every((t) => pajar.includes(t)); // deben aparecer todas las palabras
-}
-
-function limpiarBuscador() {
-  FiltroProp.texto = '';
-  FiltroProp.tipo = '';
-  const inp = document.getElementById('buscadorPropuestas');
-  const sel = document.getElementById('buscadorTipo');
-  if (inp) inp.value = '';
-  if (sel) sel.value = '';
-  document.getElementById('buscadorLimpiar')?.classList.add('hidden');
-  renderListaPropuestas();
-}
-
-function activarBuscador() {
-  const inp = document.getElementById('buscadorPropuestas');
-  const sel = document.getElementById('buscadorTipo');
-  const btn = document.getElementById('buscadorLimpiar');
-  if (!inp || !sel) return;
-  inp.addEventListener('input', () => {
-    FiltroProp.texto = inp.value;
-    btn?.classList.toggle('hidden', !inp.value);
-    renderListaPropuestas();
-  });
-  inp.addEventListener('keydown', (e) => { if (e.key === 'Escape') limpiarBuscador(); });
-  sel.addEventListener('change', () => { FiltroProp.tipo = sel.value; renderListaPropuestas(); });
-  btn?.addEventListener('click', () => { limpiarBuscador(); inp.focus(); });
-}
-
-function renderListaPropuestas() {
-  const lista = document.getElementById('propuestasList');
-  const contador = document.getElementById('contadorProp');
-  const statP = document.getElementById('statPropuestas');
-  const resumen = document.getElementById('buscadorResumen');
-  const activas = select.propuestasActivas();
-  if (contador) contador.textContent = String(activas.length);
-  if (statP) statP.textContent = String(activas.length);
-  if (!lista) return;
-  if (activas.length === 0) {
-    if (resumen) resumen.textContent = '';
-    lista.innerHTML = `
-      <div class="empty-propuestas" id="emptyPropuestas">
-        <p>Todavía no hay propuestas. Sé el primero en proponer un espacio verde en el barrio.</p>
-      </div>`;
-    return;
-  }
-  const filtrando = Boolean(FiltroProp.texto.trim() || FiltroProp.tipo);
-  const visibles = activas.filter(propuestaCoincide);
-  if (resumen) {
-    resumen.textContent = filtrando
-      ? `Mostrando ${visibles.length} de ${activas.length} propuestas`
-      : '';
-  }
-  if (visibles.length === 0) {
-    const q = FiltroProp.texto.trim();
-    lista.innerHTML = `
-      <div class="sin-resultados">
-        <p>No encontramos propuestas${q ? ` para «${escapeHtml(q)}»` : ''}${FiltroProp.tipo ? ` de tipo ${escapeHtml(FiltroProp.tipo)}` : ''}.<br>Probá con otras palabras o quitá los filtros.</p>
-        <button type="button" class="btn-primary btn-sm" onclick="limpiarBuscador()">Limpiar búsqueda</button>
-      </div>`;
-    return;
-  }
-  const ordenadas = [...visibles].sort((a, b) => (b.votos || 0) - (a.votos || 0));
-  lista.innerHTML = ordenadas.map(tarjetaPropuestaHTML).join('');
-}
-
-function renderPanelLateral() {
-  const panel = document.getElementById('mapaPanel');
-  if (!panel) return;
-  let html = ESPACIOS_VERDES.slice(0, 2).map((f) => `
-    <div class="panel-card" onclick="abrirDetalleFicha('verde', '${f.id}')" style="cursor:pointer">
-      <h4>🌳 ${escapeHtml(f.titulo)}</h4>
-      <p>${escapeHtml(f.detalle)}</p>
-      <span class="tag">ACTIVO · ${escapeHtml(f.resumen)}</span>
-    </div>`).join('');
-  const top = select.topPropuestas(3);
-  if (top.length === 0) {
-    html += `
-      <div class="panel-card panel-empty">
-        <h4>📍 Propuestas ciudadanas</h4>
-        <p>Aún no hay propuestas publicadas. Cuando la comunidad cargue ideas, aparecerán aquí y en el mapa.</p>
-      </div>`;
-  } else {
-    top.forEach((p) => {
-      html += `
-        <div class="panel-card propuesta">
-          <h4>★ ${escapeHtml(p.titulo)}</h4>
-          <p>${escapeHtml((p.descripcion || '').slice(0, 120))}${(p.descripcion || '').length > 120 ? '…' : ''}</p>
-          <span class="tag">${p.votos} VOTO${p.votos === 1 ? '' : 'S'} · ${(p.estado || 'NUEVA').toUpperCase()}</span>
-        </div>`;
-    });
-  }
-  html += `
-    <button type="button" class="btn-ver-mas" onclick="abrirModalTotal()">
-      Ver más fichas y propuestas…
-    </button>`;
-  panel.innerHTML = html;
-}
-
-function renderAll() {
-  renderListaPropuestas();
-  renderPanelLateral();
-  syncMarcadoresDesdeStore();
-}
-
-function selectTipo(boton) {
-  document.querySelectorAll('.tipo-btn').forEach((b) => b.classList.remove('selected'));
-  boton.classList.add('selected');
-}
-
-async function enviarPropuesta() {
-  const tipoBtn = document.querySelector('.tipo-btn.selected');
-  const latRaw = document.getElementById('inputLat')?.value;
-  const lngRaw = document.getElementById('inputLng')?.value;
-  const creada = await crearPropuesta({
-    titulo: (document.getElementById('inputTitulo')?.value || '').trim(),
-    direccion: (document.getElementById('inputDireccion')?.value || '').trim(),
-    descripcion: (document.getElementById('inputDesc')?.value || '').trim(),
-    tipo: tipoBtn?.dataset?.tipo || tipoBtn?.textContent?.trim() || 'Plaza de bolsillo',
-    latitud: latRaw ? parseFloat(latRaw) : null,
-    longitud: lngRaw ? parseFloat(lngRaw) : null,
-  });
-  if (!creada) return;
-  document.getElementById('inputTitulo').value = '';
-  document.getElementById('inputDireccion').value = '';
-  document.getElementById('inputDesc').value = '';
-  document.getElementById('inputLat').value = '';
-  document.getElementById('inputLng').value = '';
-  const ut = document.getElementById('ubicacionTexto');
-  if (ut) {
-    ut.textContent = 'Sin marcar';
-    ut.classList.remove('marcada');
-  }
-  const card = document.querySelector(`.propuesta-card[data-id="${creada.id}"]`);
-  if (card) {
-    card.classList.add('propuesta-nueva-flash');
-    setTimeout(() => card.classList.remove('propuesta-nueva-flash'), 1200);
-  }
-}
-
-function abrirModalTotal() {
-  const modal = document.getElementById('modalTotal');
-  const content = document.getElementById('modalBodyContent');
-  if (!modal || !content) return;
-  let html = '<div class="modal-section-title">Espacios verdes existentes</div>';
-  html += ESPACIOS_VERDES.map((f) => `
-    <div class="panel-card" style="margin-bottom:0.5rem;cursor:pointer" onclick="abrirDetalleFicha('verde', '${f.id}')">
-      <h4>🌳 ${escapeHtml(f.titulo)}</h4><p>${escapeHtml(f.resumen)}</p><span class="tag">ACTIVO</span>
-    </div>`).join('');
-  html += '<div class="modal-section-title" style="margin-top:1.5rem">Islas de calor</div>';
-  html += ISLAS_CALOR.map((f) => `
-    <div class="panel-card" style="margin-bottom:0.5rem;cursor:pointer" onclick="abrirDetalleFicha('calor', '${f.id}')">
-      <h4>🌡️ ${escapeHtml(f.titulo)}</h4><p>${escapeHtml(f.resumen)}</p><span class="tag">ACTIVO</span>
-    </div>`).join('');
-  html += '<div class="modal-section-title" style="margin-top:1.5rem">Propuestas ciudadanas</div>';
-  const activas = select.propuestasActivas();
-  if (activas.length === 0) {
-    html += '<p style="font-size:0.85rem;color:var(--pizarra-claro)">No hay propuestas registradas todavía.</p>';
-  } else {
-    activas.forEach((p) => {
-      html += `<div style="margin-bottom:0.5rem">${tarjetaPropuestaHTML(p)}</div>`;
-    });
-  }
-  content.innerHTML = html;
-  modal.classList.add('active');
-}
-
-function cerrarModalTotal() {
-  document.getElementById('modalTotal')?.classList.remove('active');
-}
-
-// ── Detalle de una ficha o propuesta (desde el marcador del mapa, "Ver más") ──
-
-function abrirDetalle(titulo, html) {
-  const modal = document.getElementById('modalDetalle');
-  const tituloEl = document.getElementById('modalDetalleTitulo');
-  const content = document.getElementById('modalDetalleContent');
-  if (!modal || !content) return;
-  if (tituloEl) tituloEl.textContent = titulo;
-  content.innerHTML = html;
-  modal.classList.add('active');
-}
-
-function cerrarModalDetalle() {
-  document.getElementById('modalDetalle')?.classList.remove('active');
-}
-
-function abrirDetallePropuesta(id) {
-  const p = Store.propuestas.find((x) => String(x.id) === String(id));
-  if (!p) return;
-  cerrarModalTotal();
-  abrirDetalle(p.titulo, tarjetaPropuestaHTML(p));
-}
-
-function abrirDetalleFicha(tipo, id) {
-  const lista = tipo === 'verde' ? ESPACIOS_VERDES : ISLAS_CALOR;
-  const f = lista.find((x) => x.id === id);
-  if (!f) return;
-  const icono = tipo === 'verde' ? '🌳' : '🌡️';
-  const html = `
-    <div class="panel-card">
-      <h4>${icono} ${escapeHtml(f.titulo)}</h4>
-      <p>${escapeHtml(f.detalle)}</p>
-      <span class="tag">${escapeHtml(f.resumen)}</span>
-    </div>
-    <button type="button" class="btn-ver-en-mapa" onclick="irAMapa(${f.lat}, ${f.lng}, '${tipo}', '${escapeHtml(f.id)}')">📍 Ver ubicación en el mapa</button>
-  `;
-  abrirDetalle(f.titulo, html);
-}
-
-// ── "Ver en el mapa" (desde una tarjeta o ficha de detalle) ──
-
-function irAMapa(lat, lng, tipo, id) {
-  cerrarModalDetalle();
-  cerrarModalTotal();
-  mostrarVista('mapa');
-  enfocarMarcador(lat, lng, tipo, id);
-}
-
-// Centra el mapa en un marcador, abre su popup y lo resalta.
-// Asume que la vista del mapa ya está (o está por estar) visible.
-function enfocarMarcador(lat, lng, tipo, id) {
-  // Esperamos a que la vista del mapa esté visible y aplicarVista() ya haya
-  // corrido su propio invalidateSize() (a los 60ms) antes de centrar,
-  // para que Leaflet calcule bien el tamaño del contenedor.
-  setTimeout(() => {
-    if (!Store.mapa) return;
-    Store.mapa.invalidateSize();
-    Store.mapa.flyTo([lat, lng], 18, { duration: 0.8 });
-    const grupo = tipo === 'prop' ? Store.marcadores : tipo === 'verde' ? Store.marcadoresVerde : Store.marcadoresCalor;
-    const marker = grupo[id];
-    if (!marker) return;
-    setTimeout(() => {
-      marker.openPopup();
-      const el = marker.getElement();
-      if (el) {
-        el.classList.add('marcador-resaltado');
-        setTimeout(() => el.classList.remove('marcador-resaltado'), 1800);
-      }
-    }, 850);
-  }, 150);
-}
-
-// ——— Buscador del mapa ———
-// Busca en espacios verdes, islas de calor y propuestas con ubicación.
-// Al elegir un resultado, el mapa vuela hasta ahí y abre su popup.
-const BuscadorMapa = { resultados: [], activo: -1 };
-
-function itemsBuscablesMapa() {
-  const items = [];
-  ESPACIOS_VERDES.forEach((f) => items.push({
-    tipo: 'verde', id: f.id, lat: f.lat, lng: f.lng, ico: '🌳',
-    titulo: f.titulo, sub: f.resumen,
-    pajar: normalizarBusqueda([f.titulo, f.resumen, f.detalle, 'espacio verde'].join(' ')),
-  }));
-  ISLAS_CALOR.forEach((f) => items.push({
-    tipo: 'calor', id: f.id, lat: f.lat, lng: f.lng, ico: '🌡️',
-    titulo: f.titulo, sub: f.resumen,
-    pajar: normalizarBusqueda([f.titulo, f.resumen, f.detalle].join(' ')),
-  }));
-  select.propuestasActivas()
-    .filter((p) => p.latitud != null && p.longitud != null)
-    .forEach((p) => items.push({
-      tipo: 'prop', id: p.id, lat: p.latitud, lng: p.longitud, ico: '⭐',
-      titulo: p.titulo, sub: `Propuesta · ${p.direccion || p.tipo} · ${p.votos} voto${p.votos === 1 ? '' : 's'}`,
-      pajar: normalizarBusqueda([p.titulo, p.direccion, p.descripcion, p.tipo, p.nombre_usuario, 'propuesta'].join(' ')),
-    }));
-  return items;
-}
-
-function buscarEnMapa(texto) {
-  const terminos = normalizarBusqueda(texto).split(/\s+/).filter(Boolean);
-  if (terminos.length === 0) return [];
-  return itemsBuscablesMapa()
-    .filter((it) => terminos.every((t) => it.pajar.includes(t)))
-    .map((it) => {
-      const tit = normalizarBusqueda(it.titulo);
-      return { it, score: terminos.every((t) => tit.includes(t)) ? 2 : 1 }; // título primero
-    })
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 8)
-    .map((x) => x.it);
-}
-
-function cerrarResultadosMapa() {
-  const ul = document.getElementById('mapaResultados');
-  const inp = document.getElementById('buscadorMapa');
-  ul?.classList.add('hidden');
-  inp?.setAttribute('aria-expanded', 'false');
-  inp?.removeAttribute('aria-activedescendant');
-  BuscadorMapa.activo = -1;
-}
-
-function marcarResultadoActivo(i) {
-  BuscadorMapa.activo = i;
-  const inp = document.getElementById('buscadorMapa');
-  document.querySelectorAll('#mapaResultados li[data-i]').forEach((li) => {
-    const on = Number(li.dataset.i) === i;
-    li.setAttribute('aria-selected', on ? 'true' : 'false');
-    if (on) { inp?.setAttribute('aria-activedescendant', li.id); li.scrollIntoView({ block: 'nearest' }); }
-  });
-}
-
-function renderResultadosMapa() {
-  const ul = document.getElementById('mapaResultados');
-  const inp = document.getElementById('buscadorMapa');
-  if (!ul || !inp) return;
-  const q = inp.value.trim();
-  if (!q) { cerrarResultadosMapa(); return; }
-  BuscadorMapa.resultados = buscarEnMapa(q);
-  BuscadorMapa.activo = -1;
-  ul.innerHTML = BuscadorMapa.resultados.length
-    ? BuscadorMapa.resultados.map((r, i) => `
-        <li id="mapaRes-${i}" role="option" data-i="${i}" aria-selected="false">
-          <span class="res-ico" aria-hidden="true">${r.ico}</span>
-          <span class="res-txt">
-            <div class="res-titulo">${escapeHtml(r.titulo)}</div>
-            <div class="res-sub">${escapeHtml(r.sub)}</div>
-          </span>
-        </li>`).join('')
-    : `<li class="res-vacio">No encontramos nada para «${escapeHtml(q)}» en el mapa.</li>`;
-  ul.classList.remove('hidden');
-  inp.setAttribute('aria-expanded', 'true');
-}
-
-function seleccionarResultadoMapa(i) {
-  const r = BuscadorMapa.resultados[i];
-  if (!r) return;
-  const inp = document.getElementById('buscadorMapa');
-  if (inp) inp.value = r.titulo;
-  document.getElementById('buscadorMapaLimpiar')?.classList.remove('hidden');
-  cerrarResultadosMapa();
-  // Si el usuario había apagado esa capa con los filtros, la prendemos
-  const btn = document.querySelector(`.filtros-mapa .filtro-btn.${r.tipo}`);
-  if (!Store.filtros[r.tipo] && btn) filtrar(r.tipo, btn);
-  document.querySelector('.mapa-canvas')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  enfocarMarcador(r.lat, r.lng, r.tipo, r.id);
-}
-
-function activarBuscadorMapa() {
-  const inp = document.getElementById('buscadorMapa');
-  const ul = document.getElementById('mapaResultados');
-  const btn = document.getElementById('buscadorMapaLimpiar');
-  if (!inp || !ul) return;
-  inp.addEventListener('input', () => {
-    btn?.classList.toggle('hidden', !inp.value);
-    renderResultadosMapa();
-  });
-  inp.addEventListener('focus', () => { if (inp.value.trim()) renderResultadosMapa(); });
-  inp.addEventListener('keydown', (e) => {
-    const n = BuscadorMapa.resultados.length;
-    if (e.key === 'ArrowDown' && n) { e.preventDefault(); marcarResultadoActivo((BuscadorMapa.activo + 1) % n); }
-    else if (e.key === 'ArrowUp' && n) { e.preventDefault(); marcarResultadoActivo((BuscadorMapa.activo - 1 + n) % n); }
-    else if (e.key === 'Enter') {
-      e.preventDefault();
-      if (!ul.classList.contains('hidden') && n) seleccionarResultadoMapa(BuscadorMapa.activo >= 0 ? BuscadorMapa.activo : 0);
-    } else if (e.key === 'Escape') {
-      if (ul.classList.contains('hidden')) { inp.value = ''; btn?.classList.add('hidden'); }
-      cerrarResultadosMapa();
-    }
-  });
-  ul.addEventListener('click', (e) => {
-    const li = e.target.closest('li[data-i]');
-    if (li) seleccionarResultadoMapa(Number(li.dataset.i));
-  });
-  btn?.addEventListener('click', () => { inp.value = ''; btn.classList.add('hidden'); cerrarResultadosMapa(); inp.focus(); });
-  document.addEventListener('click', (e) => { if (!e.target.closest('.mapa-buscador')) cerrarResultadosMapa(); });
-}
-
-function animarBarrasAlEntrar() {
-  const seccionStats = document.getElementById('estadisticas');
-  if (!seccionStats) return;
-  const observer = new IntersectionObserver((entradas) => {
-    if (entradas.some((e) => e.isIntersecting)) {
-      document.querySelectorAll('.barra-fill').forEach((barra) => {
-        barra.style.width = barra.getAttribute('data-ancho');
-      });
-      observer.disconnect();
-    }
-  }, { threshold: 0.3 });
-  observer.observe(seccionStats);
-}
-
-// ——— Navegación por vistas + menú hamburguesa ———
-// Cada sección es una "pantalla" (clase .vista). Se navega con el hash de la
-// URL (#mapa, #propuestas...), así funcionan los links, el botón "atrás" y
-// se puede compartir el link directo a una sección.
-const VISTAS = ['inicio', 'mapa', 'estadisticas', 'propuestas', 'asistente', 'integrantes'];
-
-function aplicarVista(id) {
-  if (!VISTAS.includes(id)) id = 'inicio';
-  document.querySelectorAll('main .vista').forEach((v) => v.classList.toggle('activa', v.id === id));
-  document.querySelectorAll('#menuLateral [data-vista]').forEach((a) => {
-    const activo = a.dataset.vista === id;
-    a.classList.toggle('activo', activo);
-    if (activo) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
-  });
-  window.scrollTo(0, 0);
-  cerrarMenu();
-  // Leaflet calcula mal su tamaño si el mapa estaba oculto al crearse
-  if (id === 'mapa' && Store.mapa) setTimeout(() => Store.mapa.invalidateSize(), 60);
-}
-
-function mostrarVista(id) {
-  if (location.hash === '#' + id) aplicarVista(id);
-  else location.hash = id; // dispara "hashchange" -> aplicarVista
-}
-
-function abrirMenu() {
-  document.getElementById('menuLateral')?.classList.add('abierto');
-  document.getElementById('drawerBackdrop')?.classList.add('abierto');
-  const btn = document.getElementById('btnHamburguesa');
-  btn?.setAttribute('aria-expanded', 'true');
-  btn?.setAttribute('aria-label', 'Cerrar menú');
-}
-
-function cerrarMenu() {
-  document.getElementById('menuLateral')?.classList.remove('abierto');
-  document.getElementById('drawerBackdrop')?.classList.remove('abierto');
-  const btn = document.getElementById('btnHamburguesa');
-  btn?.setAttribute('aria-expanded', 'false');
-  btn?.setAttribute('aria-label', 'Abrir menú');
-}
-
-function activarNavegacion() {
-  const btn = document.getElementById('btnHamburguesa');
-  btn?.addEventListener('click', () => {
-    btn.getAttribute('aria-expanded') === 'true' ? cerrarMenu() : abrirMenu();
-  });
-  document.getElementById('drawerBackdrop')?.addEventListener('click', cerrarMenu);
-  document.getElementById('menuLateral')?.addEventListener('click', (e) => {
-    if (e.target.closest('a')) cerrarMenu();
-  });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cerrarMenu(); });
-  window.addEventListener('hashchange', () => aplicarVista(location.hash.slice(1)));
-  aplicarVista(location.hash.slice(1));
-}
-
-// ——— Integrantes del grupo ———
-// EDITÁ ESTA LISTA: una línea por integrante. "foto" es opcional
-// (ej: 'fotos/juan.jpg'); si la dejás vacía se muestran las iniciales.
-const INTEGRANTES = [
-  { nombre: 'Gil Mendive Ramiro', rol: 'Optimizacion de la pagina / 4°2 computacion' },
-  { nombre: 'Laxi Maximo Segundo', rol: 'Optimizacion de la pagina / 4°2 computacion' },
-  { nombre: 'Mammani Maylen', rol: 'Creacion de videos y resumen de la pagina / 4°2 computacion', foto: '' },
-  { nombre: 'Madai Mariela Andacaba', rol: 'desarrolladora original de la pagina y participante antigua en aerohack / 6°2 computacion', foto: '' },
-  { nombre: 'Antonella Vivacqua', rol: ' desarrolladora original de la pagina y participante antigua en aerohack/ 6°2 computacion', foto: '' },
-  { nombre: 'Villa Godoy Thiago', rol: 'Optimizacion de la pagina / 4°2 computacion', foto: '' },
-];
-
-function renderIntegrantes() {
-  const grid = document.getElementById('integrantesGrid');
-  if (!grid) return;
-  grid.textContent = '';
-  INTEGRANTES.forEach((i) => {
-    const card = document.createElement('div');
-    card.className = 'integrante-card';
-
-    const avatar = document.createElement('div');
-    avatar.className = 'integrante-avatar';
-    if (i.foto) {
-      const img = document.createElement('img');
-      img.src = i.foto;
-      img.alt = i.nombre;
-      img.onerror = () => { avatar.textContent = iniciales(i.nombre); };
-      avatar.appendChild(img);
-    } else {
-      avatar.textContent = iniciales(i.nombre);
-    }
-
-    const nombre = document.createElement('div');
-    nombre.className = 'integrante-nombre';
-    nombre.textContent = i.nombre;
-    const rol = document.createElement('div');
-    rol.className = 'integrante-rol';
-    rol.textContent = i.rol;
-
-    card.append(avatar, nombre, rol);
-    grid.appendChild(card);
-  });
-}
-
-function iniciales(nombre) {
-  return String(nombre).trim().split(/\s+/).slice(0, 2).map((p) => p[0] || '').join('').toUpperCase() || '?';
-}
-
-// El prompt del asistente ahora vive en server.js (junto con la API key),
-// no en el navegador. Ver SYSTEM_PROMPT en server.js si lo querés editar.
-
-function addMsg(texto, rol) {
-  const box = document.getElementById('aiMessages');
-  if (!box) return;
-  const div = document.createElement('div');
-  div.className = `msg msg-${rol}`;
-  div.textContent = texto;
-  box.appendChild(div);
-  box.scrollTop = box.scrollHeight;
-}
-
-function addTyping() {
-  const box = document.getElementById('aiMessages');
-  if (!box) return null;
-  const div = document.createElement('div');
-  div.className = 'msg msg-typing';
-  div.id = 'typingIndicator';
-  div.innerHTML = 'Escribiendo <div class="typing-dots"><span></span><span></span><span></span></div>';
-  box.appendChild(div);
-  box.scrollTop = box.scrollHeight;
-  return div;
-}
-
-async function enviarMensaje() {
-  const aiInput = document.getElementById('aiInput');
-  const aiSendBtn = document.getElementById('aiSendBtn');
-  const texto = (aiInput?.value || '').trim();
-  if (!texto || aiSendBtn?.disabled) return;
-  addMsg(texto, 'user');
-  if (aiInput) aiInput.value = '';
-  if (aiSendBtn) aiSendBtn.disabled = true;
-  const typing = addTyping();
-  try {
-    // Llamamos a NUESTRO backend (/api/ai/chat), no directo a Google:
-    // la API key vive en el servidor (.env) y nunca se expone en el navegador.
-    const response = await fetch(`${API_BASE}/api/ai/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mensaje: texto }),
-    });
-    const data = await response.json();
-    typing?.remove();
-    if (!response.ok) {
-      addMsg(data.error || 'Lo siento, no pude procesar tu consulta. Intentá de nuevo.', 'bot');
-    } else {
-      addMsg(data.texto || 'Lo siento, no pude procesar tu consulta. Intentá de nuevo.', 'bot');
-    }
-  } catch {
-    typing?.remove();
-    addMsg('Hubo un error al conectar. Por favor intentá de nuevo en un momento.', 'bot');
-  }
-  if (aiSendBtn) aiSendBtn.disabled = false;
-  aiInput?.focus();
-}
-
-function preguntarSugerencia(chip) {
-  const aiInput = document.getElementById('aiInput');
-  if (aiInput) aiInput.value = chip.textContent;
-  enviarMensaje();
-}
-
-async function intentarCargarDesdeAPI() {
-  try {
-    const res = await fetch(`${API_BASE}/api/propuestas`);
-    if (!res.ok) return;
-    const data = await res.json();
-    if (!Array.isArray(data) || !data.length) return;
-    Store.propuestas = data.map(normalizePropuesta);
-    persistPropuestas();
-  } catch (_) {}
-}
-
-async function init() {
-  activarNavegacion(); // primero el menú, así anda aunque falle el mapa
-  renderIntegrantes();
-  activarBuscador();
-  activarBuscadorMapa();
-  hydrateStore();
-  inicializarMapa();
-  animarBarrasAlEntrar();
-  document.getElementById('modalLogin')?.addEventListener('click', (e) => {
-    if (e.target.id === 'modalLogin') cerrarModalLogin();
-  });
-  document.getElementById('modalTotal')?.addEventListener('click', (e) => {
-    if (e.target.id === 'modalTotal') cerrarModalTotal();
-    if (e.target.id === 'modalDetalle') cerrarModalDetalle();
-  });
-  document.getElementById('modalModeracion')?.addEventListener('click', (e) => {
-    if (e.target.id === 'modalModeracion') cerrarModalModeracion();
-  });
-  document.getElementById('modalBanDuracion')?.addEventListener('click', (e) => {
-    if (e.target.id === 'modalBanDuracion') cerrarModalBan();
-  });
-  document.getElementById('aiInput')?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') enviarMensaje();
-  });
-  document.addEventListener('click', (e) => {
-    if (!e.target.closest('.pcard-menu-wrap')) cerrarMenusPropuesta();
-  });
-  await intentarCargarDesdeAPI();
-  renderAuthUI();
-  renderAll();
-  await refrescarEstadoBan();
-  // Re-chequear ban cada minuto por si expira mientras está en la página
-  setInterval(() => {
-    if (Store.usuario?.baneado_hasta) actualizarBannerBan();
-  }, 60000);
-  // Google puede cargar async; reintentar init del botón
-  window.addEventListener('load', () => setTimeout(inicializarGoogleButton, 300));
-  setTimeout(inicializarGoogleButton, 800);
-}
-
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
-} else {
-  init();
-}
-
-
-
-// Codigo SECRETO KONAMI
-
-let SANTELMOURL = 'https://www.youtube.com/watch?v=q7dfO4XJMoM';
-
-document.addEventListener('DOMContentLoaded', () => {
-  const codigoKonami = [
-    'ArrowUp', 'ArrowUp',
-    'ArrowDown', 'ArrowDown',
-    'ArrowLeft', 'ArrowRight',
-    'ArrowLeft', 'ArrowRight',
-    'b', 'a'
-  ];
-
-  let indiceKonami = 0;
-
-  window.addEventListener('keydown', (event) => {
-    const teclaPresionada = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-    const teclaEsperada = codigoKonami[indiceKonami].toLowerCase();
-
-    if (teclaPresionada === teclaEsperada) {
-      indiceKonami++;
-      if (indiceKonami === codigoKonami.length) {
-        activarSecreto();
-        indiceKonami = 0;
-      }
-    } else {
-      indiceKonami = teclaPresionada === codigoKonami[0].toLowerCase() ? 1 : 0;
-    }
-  });
-
-  function activarSecreto() {
-    window.location.href = SANTELMOURL;
-  }
-});
+/* --- Variables de color y tipografía --- */
+:root {
+  --verde-oscuro: #1B4332;
+  --verde-medio: #40916C;
+  --verde-claro: #74C69D;
+  --crema: #F8F4ED;
+  --crema-oscura: #EDE8DF;
+  --pizarra: #2D3748;
+  --pizarra-claro: #4A5568;
+  --oro: #C8940A;
+  --rojo-calor: #C0392B;
+  --blanco: #FFFFFF;
+}
+
+/* --- Reset básico --- */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--crema);
+  color: var(--pizarra);
+  overflow-x: hidden;
+}
+
+/* ============================================
+   NAVEGACIÓN
+============================================ */
+nav {
+  /* z-index alto a propósito: Leaflet usa hasta 1000 en sus propios
+     controles (zoom, atribución), así que el nav necesita superarlo
+     para no quedar tapado al hacer scroll sobre el mapa. */
+  position: fixed; top: 0; left: 0; right: 0; z-index: 1100;
+  background: rgba(27, 67, 50, 0.97);
+  backdrop-filter: blur(8px);
+  padding: 0 2rem;
+  height: 60px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.nav-logo {
+  font-family: 'Fraunces', serif;
+  font-size: 1.2rem; font-weight: 600;
+  color: var(--crema);
+}
+.nav-logo span { color: var(--verde-claro); }
+.nav-links { display: flex; gap: 2rem; list-style: none; }
+.nav-links a {
+  color: rgba(248, 244, 237, 0.75);
+  text-decoration: none; font-size: 0.82rem; font-weight: 500;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  transition: color 0.2s;
+}
+.nav-links a:hover { color: var(--verde-claro); }
+
+/* ============================================
+   HERO (portada)
+============================================ */
+.hero {
+  min-height: 100vh;
+  background: var(--verde-oscuro);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 80px 2rem 4rem;
+  position: relative; overflow: hidden;
+}
+/* Degradados decorativos de fondo */
+.hero::before {
+  content: '';
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse at 60% 40%, rgba(64,145,108,0.2) 0%, transparent 60%),
+    radial-gradient(ellipse at 20% 80%, rgba(116,198,157,0.1) 0%, transparent 50%);
+}
+.hero-badge {
+  background: rgba(116, 198, 157, 0.15);
+  border: 1px solid rgba(116, 198, 157, 0.3);
+  border-radius: 2px;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--verde-claro); margin-bottom: 2rem;
+  position: relative; z-index: 1;
+}
+.hero-stat { position: relative; z-index: 1; text-align: center; margin-bottom: 1.5rem; }
+.hero-stat .number {
+  font-family: 'Fraunces', serif;
+  font-size: clamp(5rem, 15vw, 10rem);
+  font-weight: 800; line-height: 0.9;
+  color: var(--verde-claro);
+}
+.hero-stat .unit {
+  font-family: 'Fraunces', serif;
+  font-size: clamp(1rem, 3vw, 1.6rem);
+  color: rgba(116, 198, 157, 0.6);
+  font-weight: 300; font-style: italic;
+  display: block; margin-top: 0.5rem;
+}
+.hero-headline {
+  font-family: 'Fraunces', serif;
+  font-size: clamp(1.8rem, 5vw, 3.2rem);
+  font-weight: 600; line-height: 1.15;
+  color: var(--crema); text-align: center;
+  max-width: 700px; position: relative; z-index: 1;
+  margin-bottom: 1.2rem;
+}
+.hero-sub {
+  color: rgba(248, 244, 237, 0.6);
+  font-size: 1rem; text-align: center;
+  max-width: 520px; line-height: 1.7;
+  position: relative; z-index: 1; margin-bottom: 2.5rem;
+}
+.hero-actions {
+  display: flex; gap: 1rem; flex-wrap: wrap;
+  justify-content: center; position: relative; z-index: 1;
+}
+.btn-primary {
+  background: var(--verde-claro);
+  color: var(--verde-oscuro); border: none;
+  padding: 0.85rem 2rem; border-radius: 2px;
+  font-size: 0.85rem; font-weight: 600;
+  letter-spacing: 0.05em; text-transform: uppercase;
+  cursor: pointer; transition: all 0.2s;
+  text-decoration: none; display: inline-block;
+}
+.btn-primary:hover { background: var(--blanco); transform: translateY(-1px); }
+.btn-outline1 {
+  background: transparent;
+  color: rgba(248, 244, 237, 0.8); border: 1px solid rgba(248, 244, 237, 0.25);
+  padding: 0.85rem 2rem; border-radius: 2px;
+  font-size: 0.85rem; font-weight: 500;
+  letter-spacing: 0.05em; text-transform: uppercase;
+  cursor: pointer; transition: all 0.2s;
+  text-decoration: none; display: inline-block;
+}
+.btn-outline:hover { border-color: var(--verde-claro); color: var(--verde-claro); }
+
+.hero-scroll {
+  position: absolute; bottom: 2rem; left: 50%; transform: translateX(-50%);
+  color: rgba(116, 198, 157, 0.4); font-size: 0.75rem;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
+  animation: bounce 2s infinite;
+}
+.hero-scroll::after {
+  content: ''; width: 1px; height: 40px;
+  background: linear-gradient(to bottom, rgba(116,198,157,0.4), transparent);
+}
+@keyframes bounce {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(6px); }
+}
+
+/* ============================================
+   ESTILOS COMUNES DE SECCIÓN
+============================================ */
+section { padding: 5rem 2rem; }
+.section-inner { max-width: 1100px; margin: 0 auto; }
+.section-label {
+  font-size: 0.7rem; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--verde-medio); margin-bottom: 0.75rem;
+  display: flex; align-items: center; gap: 0.6rem;
+}
+.section-label::before { content: ''; width: 24px; height: 1px; background: var(--verde-medio); }
+.section-title {
+  font-family: 'Fraunces', serif;
+  font-size: clamp(2rem, 4vw, 2.8rem);
+  font-weight: 600; line-height: 1.2;
+  color: var(--verde-oscuro); margin-bottom: 1rem;
+}
+.section-desc {
+  color: var(--pizarra-claro);
+  font-size: 0.95rem; line-height: 1.75;
+  max-width: 580px; margin-bottom: 3rem;
+}
+
+/* ============================================
+   MAPA INTERACTIVO
+============================================ */
+#mapa { background: var(--crema-oscura); }
+.mapa-grid { display: grid; grid-template-columns: 1fr 340px; gap: 2rem; align-items: start; }
+.mapa-canvas {
+  background: #e8f4e9;
+  border-radius: 4px;
+  position: relative; overflow: hidden;
+  height: 480px;
+  border: 1px solid rgba(64, 145, 108, 0.2);
+}
+/* El div #map ocupa todo el espacio del contenedor .mapa-canvas */
+#map { width: 100%; height: 100%; position: relative; z-index: 1; }
+
+/* Círculo de color detrás de cada marcador (icono personalizado de Leaflet) */
+.mapa-marcador {
+  width: 18px; height: 18px; border-radius: 50%;
+  border: 2px solid white; box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; color: white;
+}
+.mapa-marcador.verde { background: var(--verde-medio); }
+.mapa-marcador.calor { background: var(--rojo-calor); }
+.mapa-marcador.prop { background: var(--oro); }
+
+/* Popup de Leaflet: lo ajustamos a la tipografía y colores del sitio */
+.leaflet-popup-content-wrapper { border-radius: 4px; }
+.leaflet-popup-content {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.8rem; color: var(--pizarra);
+  line-height: 1.5;
+}
+.leaflet-popup-content strong { color: var(--verde-oscuro); }
+
+/* Fila con botón de voto + conteo, dentro de un popup de propuesta */
+.popup-votos {
+  display: flex; align-items: center; gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.popup-votos span { font-size: 0.78rem; color: var(--pizarra-claro); }
+
+/* Botón "Ver más información →" dentro de un popup de Leaflet */
+.popup-vermas-btn {
+  display: block; width: 100%; margin-top: 0.6rem;
+  background: none; border: none; border-top: 1px solid rgba(0,0,0,0.08);
+  padding-top: 0.5rem; text-align: left; cursor: pointer;
+  font-size: 0.78rem; font-weight: 600; color: var(--verde-medio);
+}
+.popup-vermas-btn:hover { color: var(--verde-oscuro); }
+
+/* Botón "Ver en el mapa" dentro de una tarjeta o en el modal de detalle */
+.pcard-ver-mapa, .btn-ver-en-mapa {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  margin-top: 0.75rem; padding: 0.5rem 0.9rem;
+  background: rgba(116, 198, 157, 0.12); border: none; border-radius: 6px;
+  font-size: 0.78rem; font-weight: 600; color: var(--verde-medio); cursor: pointer;
+}
+.pcard-ver-mapa:hover, .btn-ver-en-mapa:hover { background: rgba(116, 198, 157, 0.22); }
+.btn-ver-en-mapa { width: 100%; justify-content: center; margin-top: 1rem; }
+
+/* Resalte momentáneo del marcador cuando se llega a él desde "Ver en el mapa" */
+@keyframes resaltarMarcador {
+  0%, 100% { transform: scale(1); }
+  25%, 75% { transform: scale(1.6); box-shadow: 0 0 0 6px rgba(200, 148, 10, 0.35); }
+  50% { transform: scale(1.3); }
+}
+.marcador-resaltado .mapa-marcador { animation: resaltarMarcador 0.9s ease-in-out 2; }
+
+/* Leyenda de colores debajo del mapa */
+.mapa-leyenda { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 1rem; }
+.leyenda-item {
+  display: flex; align-items: center; gap: 0.4rem;
+  font-size: 0.78rem; color: var(--pizarra-claro);
+}
+.leyenda-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+/* Panel lateral con tarjetas de información del mapa */
+.mapa-panel { display: flex; flex-direction: column; gap: 1rem; }
+.panel-card {
+  background: var(--blanco);
+  border-radius: 4px;
+  padding: 1.2rem 1.4rem;
+  border-left: 3px solid var(--verde-medio);
+}
+.panel-card.calor { border-left-color: var(--rojo-calor); }
+.panel-card.propuesta { border-left-color: var(--oro); }
+.panel-card h4 { font-size: 0.82rem; font-weight: 600; color: var(--pizarra); margin-bottom: 0.3rem; }
+.panel-card p { font-size: 0.78rem; color: var(--pizarra-claro); line-height: 1.5; }
+.panel-card .tag {
+  display: inline-block; margin-top: 0.5rem;
+  background: rgba(64, 145, 108, 0.1); color: var(--verde-medio);
+  padding: 0.15rem 0.5rem; border-radius: 2px;
+  font-size: 0.68rem; font-weight: 600; letter-spacing: 0.05em;
+}
+.panel-card.calor .tag { background: rgba(192, 57, 43, 0.1); color: var(--rojo-calor); }
+.panel-card.propuesta .tag { background: rgba(200, 148, 10, 0.1); color: var(--oro); }
+
+.btn-outline{
+  background-color: rgb(75, 38, 13);
+  height: 50px;
+  width: 200px;
+  border: 5px solid #EDE8DF;
+  border-radius: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-outline button{
+  background-color: transparent;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 1rem; 
+  font-weight: 600; 
+  color: var(--crema-oscura);
+  border: none;
+}
+
+
+/* Botones para filtrar qué capas se ven en el mapa */
+.filtros-mapa { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.filtro-btn {
+  padding: 0.4rem 1rem; border-radius: 2px; border: 1px solid;
+  font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em;
+  cursor: pointer; transition: all 0.2s; text-transform: uppercase;
+  background: transparent;
+}
+.filtro-btn.verde { border-color: var(--verde-medio); color: var(--verde-medio); }
+.filtro-btn.verde.active, .filtro-btn.verde:hover { background: var(--verde-medio); color: var(--blanco); }
+.filtro-btn.calor { border-color: var(--rojo-calor); color: var(--rojo-calor); }
+.filtro-btn.calor.active, .filtro-btn.calor:hover { background: var(--rojo-calor); color: var(--blanco); }
+.filtro-btn.prop { border-color: var(--oro); color: var(--oro); }
+.filtro-btn.prop.active, .filtro-btn.prop:hover { background: var(--oro); color: var(--blanco); }
+
+/* ============================================
+   ESTADÍSTICAS
+============================================ */
+#estadisticas { background: var(--verde-oscuro); }
+#estadisticas .section-title { color: var(--crema); }
+#estadisticas .section-label { color: var(--verde-claro); }
+#estadisticas .section-label::before { background: var(--verde-claro); }
+#estadisticas .section-desc { color: rgba(248, 244, 237, 0.6); }
+
+/* Grilla de tarjetas numéricas (m² por habitante, etc.) */
+.stats-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.5px;
+  background: rgba(116, 198, 157, 0.15);
+  border: 1px solid rgba(116, 198, 157, 0.15);
+  border-radius: 4px; overflow: hidden;
+  margin-bottom: 3rem;
+}
+.stat-cell { background: rgba(27, 67, 50, 0.8); padding: 2rem 1.5rem; display: flex; flex-direction: column; }
+.stat-cell .val {
+  font-family: 'Fraunces', serif;
+  font-size: 2.8rem; font-weight: 800; line-height: 1;
+  color: var(--verde-claro); margin-bottom: 0.4rem;
+}
+.stat-cell .lbl { font-size: 0.78rem; color: rgba(248, 244, 237, 0.5); line-height: 1.4; }
+.stat-cell .trend { margin-top: 0.6rem; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.04em; }
+.trend-neg { color: var(--rojo-calor); }
+.trend-pos { color: var(--verde-claro); }
+
+/* Barras horizontales comparando cobertura verde por zona */
+.barras-titulo {
+  font-size: 0.78rem; font-weight: 600; letter-spacing: 0.08em;
+  text-transform: uppercase; color: rgba(248, 244, 237, 0.5);
+  margin-bottom: 1.2rem;
+}
+.barra-row { margin-bottom: 1.2rem; }
+.barra-label {
+  display: flex; justify-content: space-between;
+  font-size: 0.8rem; margin-bottom: 0.35rem;
+  color: rgba(248, 244, 237, 0.75);
+}
+.barra-track { height: 6px; background: rgba(116, 198, 157, 0.1); border-radius: 3px; }
+.barra-fill {
+  height: 100%; border-radius: 3px;
+  background: var(--verde-claro);
+  transition: width 1.5s cubic-bezier(.16, 1, .3, 1);
+}
+.barra-fill.calor { background: var(--rojo-calor); }
+
+/* ============================================
+   PROPUESTAS CIUDADANAS
+============================================ */
+#propuestas { background: var(--crema); }
+.propuestas-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; align-items: start; }
+
+/* Formulario para cargar una nueva propuesta */
+.propuesta-form {
+  background: var(--blanco);
+  border-radius: 4px;
+  padding: 2rem;
+  border: 1px solid rgba(64, 145, 108, 0.15);
+}
+.form-title { font-family: 'Fraunces', serif; font-size: 1.3rem; font-weight: 600; color: var(--verde-oscuro); margin-bottom: 0.4rem; }
+.form-sub { font-size: 0.82rem; color: var(--pizarra-claro); margin-bottom: 1.5rem; line-height: 1.5; }
+.form-group { margin-bottom: 1rem; }
+.form-group label {
+  display: block; font-size: 0.75rem; font-weight: 600;
+  letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--pizarra-claro); margin-bottom: 0.4rem;
+}
+.form-group input, .form-group select, .form-group textarea {
+  width: 100%; padding: 0.65rem 0.85rem;
+  border: 1px solid rgba(64, 145, 108, 0.25);
+  border-radius: 2px; font-family: 'Inter', sans-serif;
+  font-size: 0.85rem; color: var(--pizarra);
+  background: var(--crema); transition: border-color 0.2s;
+  outline: none;
+}
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+  border-color: var(--verde-medio);
+  background: var(--blanco);
+}
+.form-group textarea { resize: vertical; min-height: 90px; }
+
+/* Botones para elegir el tipo de espacio propuesto */
+.tipo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+.tipo-btn {
+  padding: 0.65rem; border: 1px solid rgba(64, 145, 108, 0.2);
+  border-radius: 2px; cursor: pointer; text-align: center;
+  font-size: 0.78rem; font-weight: 500; color: var(--pizarra-claro);
+  background: var(--crema); transition: all 0.15s;
+  display: flex; flex-direction: column; align-items: center; gap: 0.3rem;
+}
+.tipo-btn .tipo-ico { font-size: 1.4rem; }
+.tipo-btn.selected {
+  border-color: var(--verde-medio);
+  background: rgba(64, 145, 108, 0.08); color: var(--verde-oscuro); font-weight: 600;
+}
+.tipo-btn:hover { border-color: var(--verde-claro); }
+
+/* Lista de propuestas existentes (tarjetas con votos) */
+.propuestas-lista { display: flex; flex-direction: column; gap: 1rem; }
+.propuesta-card {
+  background: var(--blanco); border-radius: 4px;
+  padding: 1.2rem 1.4rem;
+  border: 1px solid rgba(64, 145, 108, 0.12);
+  transition: box-shadow 0.2s;
+  animation: slideIn 0.4s ease;
+}
+.propuesta-card:hover { box-shadow: 0 4px 20px rgba(27, 67, 50, 0.08); }
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.pcard-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem; }
+.pcard-tipo {
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--verde-medio);
+  background: rgba(64, 145, 108, 0.1); padding: 0.2rem 0.5rem;
+  border-radius: 2px;
+}
+.pcard-votos { display: flex; align-items: center; gap: 0.3rem; font-size: 0.8rem; color: var(--pizarra-claro); }
+.votar-btn {
+  background: none; border: 1px solid rgba(64, 145, 108, 0.2);
+  width: 28px; height: 28px; border-radius: 2px;
+  cursor: pointer; color: var(--verde-medio);
+  font-size: 0.9rem; display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+}
+.votar-btn:hover { background: var(--verde-medio); color: var(--blanco); border-color: var(--verde-medio); }
+.votar-btn.voted { background: var(--verde-medio); color: var(--blanco); border-color: var(--verde-medio); }
+.pcard-titulo { font-size: 0.9rem; font-weight: 600; color: var(--pizarra); margin-bottom: 0.3rem; }
+.pcard-desc { font-size: 0.8rem; color: var(--pizarra-claro); line-height: 1.5; }
+.pcard-footer {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 0.8rem; padding-top: 0.8rem;
+  border-top: 1px solid rgba(64, 145, 108, 0.08);
+}
+.pcard-usuario { font-size: 0.72rem; color: rgba(74, 85, 104, 0.6); }
+.pcard-estado {
+  font-size: 0.68rem; font-weight: 600; letter-spacing: 0.06em;
+  text-transform: uppercase; padding: 0.15rem 0.5rem; border-radius: 2px;
+}
+.estado-revision { background: rgba(200, 148, 10, 0.1); color: var(--oro); }
+.estado-aprobada { background: rgba(64, 145, 108, 0.1); color: var(--verde-medio); }
+.estado-nueva { background: rgba(45, 55, 72, 0.07); color: var(--pizarra-claro); }
+
+/* ============================================
+   ASISTENTE IA (chat)
+============================================ */
+#asistente { background: var(--crema-oscura); }
+.ai-container { background: var(--verde-oscuro); border-radius: 4px; overflow: hidden; max-width: 720px; margin: 0 auto; }
+.ai-header {
+  padding: 1.2rem 1.5rem;
+  border-bottom: 1px solid rgba(116, 198, 157, 0.15);
+  display: flex; align-items: center; gap: 0.8rem;
+}
+.ai-avatar {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: rgba(116, 198, 157, 0.15);
+  border: 1px solid rgba(116, 198, 157, 0.3);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem;
+}
+.ai-name { font-size: 0.85rem; font-weight: 600; color: var(--crema); }
+.ai-status { font-size: 0.72rem; color: var(--verde-claro); opacity: 0.7; }
+
+/* Área donde se apilan los mensajes del chat */
+.ai-messages {
+  height: 320px; overflow-y: auto;
+  padding: 1.5rem;
+  display: flex; flex-direction: column; gap: 1rem;
+  scroll-behavior: smooth;
+}
+.ai-messages::-webkit-scrollbar { width: 4px; }
+.ai-messages::-webkit-scrollbar-track { background: transparent; }
+.ai-messages::-webkit-scrollbar-thumb { background: rgba(116, 198, 157, 0.2); border-radius: 2px; }
+
+.msg {
+  max-width: 82%; padding: 0.75rem 1rem;
+  border-radius: 4px; font-size: 0.83rem; line-height: 1.6;
+  animation: fadeMsg 0.3s ease;
+}
+@keyframes fadeMsg {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.msg-bot {
+  background: rgba(116, 198, 157, 0.1);
+  color: rgba(248, 244, 237, 0.85);
+  border: 1px solid rgba(116, 198, 157, 0.15);
+  align-self: flex-start;
+}
+.msg-user {
+  background: rgba(64, 145, 108, 0.25);
+  color: var(--crema);
+  align-self: flex-end;
+  border: 1px solid rgba(116, 198, 157, 0.2);
+}
+/* Indicador de "escribiendo..." con puntitos animados */
+.msg-typing {
+  background: rgba(116, 198, 157, 0.08);
+  color: rgba(116, 198, 157, 0.5);
+  font-style: italic; align-self: flex-start;
+  border: 1px solid rgba(116, 198, 157, 0.1);
+  display: flex; align-items: center; gap: 0.5rem;
+}
+.typing-dots { display: flex; gap: 3px; }
+.typing-dots span {
+  width: 6px; height: 6px; background: var(--verde-claro);
+  border-radius: 50%; opacity: 0.5;
+  animation: typingDot 1.4s infinite;
+}
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typingDot {
+  0%, 80%, 100% { opacity: 0.2; transform: translateY(0); }
+  40% { opacity: 0.8; transform: translateY(-3px); }
+}
+
+.ai-input-row {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid rgba(116, 198, 157, 0.15);
+  display: flex; gap: 0.8rem;
+}
+.ai-input {
+  flex: 1; background: rgba(116, 198, 157, 0.07);
+  border: 1px solid rgba(116, 198, 157, 0.15);
+  border-radius: 2px; padding: 0.65rem 1rem;
+  color: var(--crema); font-family: 'Inter', sans-serif;
+  font-size: 0.83rem; outline: none;
+  transition: border-color 0.2s;
+}
+.ai-input::placeholder { color: rgba(116, 198, 157, 0.35); }
+.ai-input:focus { border-color: rgba(116, 198, 157, 0.4); }
+.ai-send {
+  background: var(--verde-claro); color: var(--verde-oscuro);
+  border: none; border-radius: 2px; padding: 0.65rem 1.2rem;
+  font-weight: 600; font-size: 0.8rem; cursor: pointer;
+  transition: all 0.2s; letter-spacing: 0.04em;
+}
+.ai-send:hover { background: var(--blanco); }
+.ai-send:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Chips con preguntas sugeridas para el chat */
+.ai-sugerencias { padding: 0 1.5rem 1rem; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.sugerencia-chip {
+  background: rgba(116, 198, 157, 0.08);
+  border: 1px solid rgba(116, 198, 157, 0.15);
+  color: rgba(248, 244, 237, 0.6);
+  padding: 0.3rem 0.75rem; border-radius: 20px;
+  font-size: 0.72rem; cursor: pointer;
+  transition: all 0.2s;
+}
+.sugerencia-chip:hover {
+  background: rgba(116, 198, 157, 0.15);
+  color: var(--verde-claro);
+  border-color: rgba(116, 198, 157, 0.3);
+}
+
+/* ============================================
+   FOOTER
+============================================ */
+footer { background: var(--pizarra); padding: 3rem 2rem; text-align: center; }
+.footer-inner { max-width: 1100px; margin: 0 auto; }
+.footer-logo { font-family: 'Fraunces', serif; font-size: 1.4rem; font-weight: 600; color: var(--crema); margin-bottom: 0.8rem; }
+.footer-logo span { color: var(--verde-claro); }
+.footer-sub { font-size: 0.8rem; color: rgba(248, 244, 237, 0.4); margin-bottom: 1.5rem; line-height: 1.6; }
+.footer-ods {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  background: rgba(116, 198, 157, 0.1);
+  border: 1px solid rgba(116, 198, 157, 0.2);
+  border-radius: 2px; padding: 0.5rem 1rem;
+  font-size: 0.75rem; color: var(--verde-claro);
+  font-weight: 600; letter-spacing: 0.05em;
+}
+.footer-copy { margin-top: 2rem; font-size: 0.72rem; color: rgba(248, 244, 237, 0.2); }
+
+/* ============================================
+   RESPONSIVE (celulares y tablets)
+============================================ */
+@media (max-width: 768px) {
+  .mapa-grid { grid-template-columns: 1fr; }
+  .propuestas-grid { grid-template-columns: 1fr; }
+  .tipo-grid { grid-template-columns: 1fr 1fr; }
+  .nav-links { display: none; }
+}
+
+/* ESTILOS MODAL */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(27, 67, 50, 0.75);
+  backdrop-filter: blur(5px);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
+}
+.modal-overlay.active { opacity: 1; pointer-events: auto; }
+
+.modal-box {
+  background: var(--blanco);
+  width: 90%; max-width: 700px; max-height: 85vh;
+  border-radius: 6px; display: flex; flex-direction: column;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+  animation: scaleIn 0.3s ease;
+}
+@keyframes scaleIn {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+.modal-header {
+  padding: 1.2rem 1.5rem; border-bottom: 1px solid var(--crema-oscura);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.modal-header h3 { font-family: 'Fraunces', serif; color: var(--verde-oscuro); font-size: 1.2rem; }
+.modal-close-btn {
+  background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--pizarra-claro);
+}
+.modal-body {
+  padding: 1.5rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1rem;
+}
+.modal-section-title {
+  font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--verde-medio); margin-top: 0.5rem; margin-bottom: 0.2rem;
+  border-bottom: 2px solid var(--crema-oscura); padding-bottom: 0.3rem;
+}
+/* ============================================
+   AUTH + PROPUESTAS VACÍAS + UBICACIÓN
+============================================ */
+.nav-auth { display: flex; align-items: center; gap: 0.75rem; }
+.btn-auth {
+  display: inline-flex; align-items: center; gap: 0.45rem;
+  background: rgba(116, 198, 157, 0.15);
+  border: 1px solid rgba(116, 198, 157, 0.35);
+  color: var(--crema);
+  padding: 0.45rem 1rem;
+  border-radius: 4px;
+  font-size: 0.8rem; font-weight: 600;
+  cursor: pointer; transition: all 0.2s;
+  font-family: inherit;
+}
+.btn-auth:hover {
+  background: var(--verde-claro);
+  color: var(--verde-oscuro);
+  border-color: var(--verde-claro);
+}
+.btn-auth-out {
+  background: transparent;
+  border-color: rgba(248,244,237,0.25);
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+}
+.nav-user { display: flex; align-items: center; gap: 0.6rem; }
+.nav-user-name {
+  font-size: 0.8rem; color: var(--verde-claro);
+  font-weight: 500; max-width: 140px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.modal-auth { max-width: 420px; }
+.auth-body { text-align: center; padding: 1.75rem 1.5rem 2rem; }
+.auth-lead {
+  font-size: 0.92rem; color: var(--pizarra-claro);
+  line-height: 1.6; margin-bottom: 1.5rem;
+}
+.btn-google {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.75rem;
+  width: 100%;
+  padding: 0.85rem 1.25rem;
+  background: #fff;
+  border: 1px solid rgba(45, 55, 72, 0.18);
+  border-radius: 6px;
+  font-size: 0.95rem; font-weight: 600;
+  color: var(--pizarra);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  transition: box-shadow 0.2s, border-color 0.2s;
+  font-family: inherit;
+}
+.btn-google:hover {
+  border-color: rgba(66, 133, 244, 0.5);
+  box-shadow: 0 2px 10px rgba(66, 133, 244, 0.15);
+}
+.auth-hint {
+  margin-top: 1.25rem;
+  font-size: 0.75rem;
+  color: var(--pizarra-claro);
+  line-height: 1.5;
+  opacity: 0.85;
+}
+.auth-required-banner {
+  background: rgba(200, 148, 10, 0.1);
+  border: 1px solid rgba(200, 148, 10, 0.3);
+  border-radius: 4px;
+  padding: 1rem 1.1rem;
+  margin-bottom: 1.25rem;
+  display: flex; flex-direction: column; gap: 0.75rem; align-items: flex-start;
+}
+.auth-required-banner p { font-size: 0.85rem; color: var(--pizarra); margin: 0; }
+.btn-sm { padding: 0.5rem 1rem !important; font-size: 0.78rem !important; }
+.hidden { display: none !important; }
+.form-bloqueado { opacity: 0.45; pointer-events: none; user-select: none; }
+.ubicacion-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.btn-ubicacion {
+  background: rgba(64, 145, 108, 0.1);
+  border: 1px dashed var(--verde-medio);
+  color: var(--verde-oscuro);
+  padding: 0.55rem 1rem;
+  border-radius: 4px;
+  font-size: 0.82rem; font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.2s;
+}
+.btn-ubicacion:hover { background: rgba(64, 145, 108, 0.2); }
+.ubicacion-texto { font-size: 0.8rem; color: var(--pizarra-claro); }
+.ubicacion-texto.marcada { color: var(--verde-medio); font-weight: 600; }
+.modo-ubicacion-banner {
+  position: absolute;
+  top: 12px; left: 50%; transform: translateX(-50%);
+  z-index: 1000;
+  background: var(--verde-oscuro);
+  color: var(--crema);
+  padding: 0.6rem 1rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  display: flex; align-items: center; gap: 1rem;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  max-width: 92%;
+  white-space: nowrap;
+}
+.btn-cancelar-ubicacion {
+  background: transparent;
+  border: 1px solid rgba(248,244,237,0.35);
+  color: var(--crema);
+  padding: 0.25rem 0.6rem;
+  border-radius: 3px;
+  font-size: 0.72rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+.btn-cancelar-ubicacion:hover { border-color: var(--verde-claro); color: var(--verde-claro); }
+#map.cursor-crosshair, #map.cursor-crosshair .leaflet-container { cursor: crosshair !important; }
+.mapa-canvas { position: relative; }
+.empty-propuestas {
+  background: rgba(64, 145, 108, 0.06);
+  border: 1px dashed rgba(64, 145, 108, 0.25);
+  border-radius: 4px;
+  padding: 2rem 1.5rem;
+  text-align: center;
+}
+.empty-propuestas p { font-size: 0.88rem; color: var(--pizarra-claro); line-height: 1.6; margin: 0; }
+.panel-empty { border-left-color: rgba(64, 145, 108, 0.3) !important; background: rgba(64, 145, 108, 0.04); }
+.btn-ver-mas {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.7rem 1rem;
+  background: transparent;
+  border: 1px solid var(--verde-medio);
+  color: var(--verde-medio);
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.2s, color 0.2s;
+}
+.btn-ver-mas:hover { background: var(--verde-medio); color: white; }
+.propuesta-nueva-flash { animation: flashCard 1.2s ease; }
+@keyframes flashCard {
+  0% { box-shadow: 0 0 0 0 rgba(64, 145, 108, 0.5); }
+  40% { box-shadow: 0 0 0 6px rgba(64, 145, 108, 0.25); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.lista-propuestas { display: flex; flex-direction: column; gap: 1rem; }
+.panel-lateral { display: flex; flex-direction: column; gap: 1rem; }
+
+.nav-avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  object-fit: cover; border: 1px solid rgba(116,198,157,0.4);
+}
+.google-btn-wrap {
+  display: flex; justify-content: center; min-height: 44px;
+  margin: 0 auto;
+}
+.google-config-hint code {
+  font-size: 0.7rem; background: rgba(0,0,0,0.06); padding: 0.1rem 0.3rem; border-radius: 2px;
+}
+
+/* Menú ⋯ en tarjetas de propuesta */
+.pcard-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.pcard-menu-wrap {
+  position: relative;
+}
+.pcard-menu-btn {
+  background: none;
+  border: 1px solid rgba(64, 145, 108, 0.2);
+  width: 28px;
+  height: 28px;
+  border-radius: 2px;
+  cursor: pointer;
+  color: var(--pizarra-claro);
+  font-size: 1.1rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  font-family: inherit;
+  padding: 0;
+}
+.pcard-menu-btn:hover {
+  background: rgba(64, 145, 108, 0.08);
+  border-color: var(--verde-medio);
+  color: var(--verde-oscuro);
+}
+.pcard-menu {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 180px;
+  background: var(--blanco);
+  border: 1px solid rgba(64, 145, 108, 0.2);
+  border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(27, 67, 50, 0.12);
+  z-index: 20;
+  padding: 0.35rem 0;
+}
+.pcard-menu.open { display: block; }
+.pcard-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0.55rem 0.9rem;
+  font-size: 0.8rem;
+  color: var(--pizarra);
+  cursor: pointer;
+  font-family: inherit;
+}
+.pcard-menu-item:hover { background: rgba(64, 145, 108, 0.08); }
+.pcard-menu-item.danger { color: var(--rojo-calor); }
+.pcard-menu-item.danger:hover { background: rgba(192, 57, 43, 0.08); }
+.pcard-menu-item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Moderación */
+.btn-mod {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  background: rgba(200, 148, 10, 0.15);
+  border: 1px solid rgba(200, 148, 10, 0.4);
+  color: #e8c56a;
+  padding: 0.35rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.72rem; font-weight: 600;
+  cursor: pointer; font-family: inherit;
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
+.btn-mod:hover { background: rgba(200, 148, 10, 0.3); }
+.modal-mod { max-width: 720px; max-height: 88vh; }
+.mod-tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; border-bottom: 1px solid var(--crema-oscura); padding-bottom: 0.5rem; }
+.mod-tab {
+  background: none; border: none; padding: 0.45rem 0.9rem;
+  font-size: 0.8rem; font-weight: 600; color: var(--pizarra-claro);
+  cursor: pointer; border-radius: 4px 4px 0 0; font-family: inherit;
+}
+.mod-tab.active { color: var(--verde-oscuro); background: rgba(64,145,108,0.1); }
+.mod-hint { font-size: 0.82rem; color: var(--pizarra-claro); margin-bottom: 1rem; line-height: 1.5; }
+.mod-list { display: flex; flex-direction: column; gap: 0.75rem; max-height: 55vh; overflow-y: auto; }
+.mod-card {
+  background: var(--crema);
+  border: 1px solid rgba(64,145,108,0.15);
+  border-radius: 4px;
+  padding: 1rem 2.2rem 1rem 1.1rem;
+  position: relative;
+}
+.mod-card h4 { font-size: 0.9rem; color: var(--verde-oscuro); margin-bottom: 0.35rem; }
+.mod-card p { font-size: 0.8rem; color: var(--pizarra-claro); margin: 0.25rem 0; line-height: 1.45; }
+.mod-meta { font-size: 0.72rem; color: rgba(74,85,104,0.7); margin-top: 0.4rem; }
+.mod-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
+.mod-btn {
+  border: none; border-radius: 3px; padding: 0.4rem 0.75rem;
+  font-size: 0.75rem; font-weight: 600; cursor: pointer; font-family: inherit;
+}
+.mod-btn-archive { background: rgba(192,57,43,0.12); color: var(--rojo-calor); }
+.mod-btn-archive:hover { background: rgba(192,57,43,0.22); }
+.mod-btn-ok { background: rgba(64,145,108,0.15); color: var(--verde-medio); }
+.mod-btn-ok:hover { background: rgba(64,145,108,0.25); }
+.mod-btn-restore { background: rgba(200,148,10,0.15); color: var(--oro); }
+.mod-btn-danger { background: rgba(192,57,43,0.9); color: #fff; }
+.mod-btn-danger:hover { background: rgba(160,40,30,0.95); }
+.mod-empty { text-align: center; padding: 2rem; color: var(--pizarra-claro); font-size: 0.88rem; }
+.mod-badge {
+  display: inline-block; font-size: 0.65rem; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 0.15rem 0.45rem; border-radius: 2px;
+  background: rgba(200,148,10,0.15); color: var(--oro);
+}
+.mod-badge.archivada { background: rgba(192,57,43,0.12); color: var(--rojo-calor); }
+
+/* Selección múltiple y acciones masivas */
+.mod-bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1rem;
+  padding: 0.65rem 0.75rem;
+  margin-bottom: 0.85rem;
+  background: rgba(64,145,108,0.08);
+  border: 1px solid rgba(64,145,108,0.2);
+  border-radius: 6px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.mod-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--verde-oscuro);
+  cursor: pointer;
+  user-select: none;
+}
+.mod-select-all input { width: 1rem; height: 1rem; accent-color: var(--verde-medio); cursor: pointer; }
+.mod-bulk-count {
+  font-size: 0.78rem;
+  color: var(--pizarra-claro);
+  min-width: 7rem;
+}
+.mod-bulk-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-left: auto; }
+.mod-card-check {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--verde-medio);
+  cursor: pointer;
+  z-index: 1;
+}
+.mod-card.selected {
+  outline: 2px solid var(--verde-medio);
+  background: rgba(64,145,108,0.06);
+}
+.mod-btn-ban {
+  background: rgba(120, 40, 40, 0.15);
+  color: #b71c1c;
+}
+.mod-btn-ban:hover { background: rgba(120, 40, 40, 0.28); }
+.mod-btn-unban {
+  background: rgba(64, 145, 108, 0.14);
+  color: var(--verde-oscuro);
+}
+.mod-btn-unban:hover { background: rgba(64, 145, 108, 0.24); }
+.ban-duracion-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+.modal-ban { max-width: 380px; }
+
+/* Banner de ban (timeout) — letras rojas */
+.ban-banner {
+  background: rgba(192, 57, 43, 0.1);
+  border: 1px solid rgba(192, 57, 43, 0.45);
+  border-radius: 6px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+}
+.ban-banner p {
+  margin: 0;
+  color: #c0392b;
+  font-weight: 700;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  letter-spacing: 0.01em;
+}
+.ban-banner.hidden { display: none; }
+.form-propuesta-bloqueada #formPropuestaCampos {
+  opacity: 0.45;
+  pointer-events: none;
+  filter: grayscale(0.3);
+}
+
+/* ============================================
+   TRIVIA VERDE (ventana emergente)
+============================================ */
+/* El login se abre encima de la trivia cuando se necesita ingresar */
+#modalLogin { z-index: 1200; }
+
+.modal-trivia { background: var(--verde-oscuro); color: var(--crema); max-width: 600px; }
+.modal-trivia .modal-header { border-bottom-color: rgba(116, 198, 157, 0.2); }
+.modal-trivia .modal-header h3 { color: var(--crema); }
+.modal-trivia .modal-close-btn { color: var(--crema); font-size: 1.8rem; line-height: 1; padding: 0 0.3rem; }
+.modal-trivia .modal-close-btn:hover { color: var(--verde-claro); }
+.trivia-body { padding: 1.5rem 1.75rem 1.75rem; overflow-y: auto; }
+
+.trivia-body h3 { font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.45rem; line-height: 1.3; margin-bottom: 1rem; }
+.trivia-body p { color: rgba(248, 244, 237, 0.75); font-size: 0.95rem; line-height: 1.7; margin-bottom: 1.1rem; }
+.tv-hud { display: flex; justify-content: space-between; align-items: center; font-size: 0.95rem; }
+.tv-vidas span { font-size: 1.4rem; margin-right: 2px; }
+.tv-vidas .off { opacity: 0.2; filter: grayscale(1); }
+.tv-pts b { color: var(--verde-claro); }
+.tv-pts em { font-style: normal; color: var(--oro); margin-left: 0.8rem; font-weight: 600; }
+.tv-barra { height: 6px; background: rgba(116, 198, 157, 0.2); border-radius: 99px; margin: 1rem 0 0.5rem; overflow: hidden; }
+/* El color (verde → amarillo → rojo) y el ancho los controla trivia.js en cada frame,
+   según el tiempo restante; acá solo suavizamos la transición entre frames. */
+.tv-barra i { display: block; height: 100%; width: 100%; background: var(--verde-claro); transition: background-color 0.15s linear; }
+.tv-prog { font-size: 0.78rem; color: rgba(248, 244, 237, 0.55); margin-bottom: 0.6rem; }
+.tv-opt {
+  display: block; width: 100%; text-align: left; font: inherit; font-size: 0.98rem;
+  color: var(--crema); background: rgba(248, 244, 237, 0.06);
+  border: 1px solid rgba(116, 198, 157, 0.3); border-radius: 2px;
+  padding: 0.85rem 1rem; margin-bottom: 0.6rem; cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+.tv-opt:hover:not(:disabled) { border-color: var(--verde-claro); background: rgba(116, 198, 157, 0.14); }
+.tv-opt:disabled { cursor: default; }
+.tv-opt.ok { border-color: var(--verde-claro); background: rgba(116, 198, 157, 0.28); }
+.tv-opt.no { border-color: var(--rojo-calor); background: rgba(192, 57, 43, 0.3); }
+.tv-fb { border-left: 3px solid var(--verde-claro); padding-left: 1rem; margin: 1.2rem 0; }
+.tv-fb.no { border-color: var(--rojo-calor); }
+.tv-fb strong { display: block; margin-bottom: 0.2rem; }
+.tv-fb p { margin: 0; color: rgba(248, 244, 237, 0.85); }
+.tv-grande { font-family: 'Fraunces', serif; font-size: 3rem; font-weight: 800; color: var(--verde-claro); line-height: 1; margin: 0.4rem 0 0.8rem; }
+
+/* Pantalla final: puesto, guardar puntos y ranking */
+.tv-posicion { background: rgba(116, 198, 157, 0.12); border-left: 3px solid var(--verde-claro); padding: 0.8rem 1rem; margin-bottom: 1.1rem; font-size: 0.95rem; line-height: 1.5; }
+.tv-posicion:empty { display: none; }
+.tv-posicion strong { display: block; font-size: 1.05rem; color: var(--verde-claro); }
+.tv-guardar { margin-bottom: 1.2rem; }
+.tv-ok { color: var(--verde-claro) !important; font-weight: 600; }
+.tv-error { color: #ff9c8f !important; margin: 0.6rem 0 0 !important; font-size: 0.85rem !important; }
+.tv-error:empty { display: none; }
+.tv-acciones { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 1.2rem; }
+
+.tv-rank { margin-top: 1.4rem; padding-top: 1.1rem; border-top: 1px solid rgba(116, 198, 157, 0.2); }
+.tv-rank h4 { font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.1rem; margin-bottom: 0.6rem; }
+.tv-rank ol { list-style: none; padding: 0; margin: 0; }
+.tv-rank li { display: flex; gap: 0.7rem; align-items: baseline; padding: 0.4rem 0.5rem; border-radius: 2px; font-size: 0.95rem; }
+.tv-rank li .pos { width: 2.4rem; flex: none; color: rgba(248, 244, 237, 0.55); font-variant-numeric: tabular-nums; }
+.tv-rank li .nom { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tv-rank li .pts { flex: none; color: var(--verde-claro); font-weight: 600; }
+.tv-rank li.tu { background: rgba(116, 198, 157, 0.18); }
+.tv-scroll { max-height: 260px; overflow-y: auto; }
+.tv-nota { font-size: 0.85rem !important; color: rgba(248, 244, 237, 0.6) !important; margin: 0.6rem 0 0 !important; }
+.tv-vermas { margin-top: 0.8rem; padding: 0.6rem 1.2rem !important; }
+
+.trivia-body button:focus-visible, .modal-trivia .modal-close-btn:focus-visible, .trivia-fab:focus-visible { outline: 3px solid var(--oro); outline-offset: 2px; }
+
+/* Botón flotante para abrir la trivia en celulares */
+.trivia-fab {
+  display: none; position: fixed; right: 16px; bottom: 16px; z-index: 900;
+  background: var(--verde-oscuro); color: var(--crema);
+  border: 1px solid rgba(116, 198, 157, 0.5); border-radius: 999px;
+  padding: 0.7rem 1.1rem; font: inherit; font-weight: 600; font-size: 0.85rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25); cursor: pointer;
+}
+@media (max-width: 768px) {
+  .trivia-fab { display: inline-flex; align-items: center; gap: 0.4rem; }
+  .trivia-body { padding: 1.2rem 1.2rem 1.4rem; }
+}
+
+
+/* ============================================
+   MENÚ HAMBURGUESA + VISTAS SEPARADAS
+============================================ */
+.nav-left { display: flex; align-items: center; gap: 0.9rem; }
+.nav-logo { text-decoration: none; }
+
+.hamburger {
+  width: 42px; height: 42px; border-radius: 6px;
+  background: transparent; border: 1px solid rgba(116, 198, 157, 0.35);
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 5px; cursor: pointer; padding: 0;
+  transition: background 0.2s;
+}
+.hamburger:hover { background: rgba(116, 198, 157, 0.15); }
+.hamburger:focus-visible { outline: 3px solid var(--oro); outline-offset: 2px; }
+.hamburger span {
+  display: block; width: 20px; height: 2px; background: var(--crema);
+  border-radius: 2px; transition: transform 0.25s ease, opacity 0.2s ease;
+}
+.hamburger[aria-expanded="true"] span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.hamburger[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
+.hamburger[aria-expanded="true"] span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+.drawer-backdrop {
+  position: fixed; top: 60px; left: 0; right: 0; bottom: 0; z-index: 1080;
+  background: rgba(0, 0, 0, 0.45);
+  opacity: 0; pointer-events: none; transition: opacity 0.25s ease;
+}
+.drawer-backdrop.abierto { opacity: 1; pointer-events: auto; }
+
+.drawer {
+  position: fixed; top: 60px; left: 0; bottom: 0; z-index: 1090;
+  width: min(300px, 85vw);
+  background: var(--verde-oscuro);
+  border-right: 1px solid rgba(116, 198, 157, 0.2);
+  padding: 1rem 0; overflow-y: auto;
+  transform: translateX(-100%); visibility: hidden;
+  transition: transform 0.28s ease, visibility 0.28s;
+  box-shadow: 6px 0 24px rgba(0, 0, 0, 0.25);
+}
+.drawer.abierto { transform: translateX(0); visibility: visible; }
+.drawer-links { list-style: none; margin: 0; padding: 0; }
+.drawer-links a {
+  display: flex; align-items: center; gap: 0.9rem;
+  padding: 0.95rem 1.5rem;
+  color: rgba(248, 244, 237, 0.8); text-decoration: none;
+  font-size: 0.9rem; font-weight: 500; letter-spacing: 0.04em;
+  border-left: 3px solid transparent;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.drawer-links a:hover { background: rgba(116, 198, 157, 0.12); color: var(--verde-claro); }
+.drawer-links a.activo {
+  color: var(--verde-claro); background: rgba(116, 198, 157, 0.16);
+  border-left-color: var(--verde-claro);
+}
+.drawer-links a:focus-visible { outline: 3px solid var(--oro); outline-offset: -3px; }
+.d-ico { font-size: 1.15rem; width: 1.6rem; text-align: center; }
+
+/* Solo se ve la vista activa */
+main .vista:not(.activa) { display: none; }
+main .vista.activa { animation: vistaEntra 0.3s ease; }
+main .vista:not(#inicio) { min-height: 75vh; }
+@keyframes vistaEntra { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* ============================================
+   INTEGRANTES
+============================================ */
+.integrantes-grid {
+  display: grid; gap: 1.5rem; margin-top: 2.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+.integrante-card {
+  background: var(--blanco);
+  border: 1px solid var(--crema-oscura);
+  border-top: 4px solid var(--verde-medio);
+  border-radius: 6px; padding: 2rem 1.25rem;
+  text-align: center;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.integrante-card:hover { transform: translateY(-4px); box-shadow: 0 8px 22px rgba(27, 67, 50, 0.15); }
+.integrante-avatar {
+  width: 96px; height: 96px; border-radius: 50%;
+  margin: 0 auto 1.1rem; overflow: hidden;
+  background: var(--verde-oscuro); color: var(--verde-claro);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Fraunces', serif; font-size: 2rem; font-weight: 600;
+}
+.integrante-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.integrante-nombre { font-family: 'Fraunces', serif; font-size: 1.15rem; font-weight: 600; color: var(--verde-oscuro); }
+.integrante-rol { margin-top: 0.35rem; font-size: 0.82rem; color: var(--pizarra-claro); }
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer, .drawer-backdrop, .hamburger span, main .vista.activa { transition: none; animation: none; }
+}
+
+
+/* Ajustes de integración para el menú y la sección de integrantes */
+.nav-left { display: flex; align-items: center; gap: 0.9rem; min-width: 0; }
+.nav-logo { text-decoration: none; white-space: nowrap; }
+.hamburger { flex: 0 0 42px; }
+#integrantes, #mapa, #estadisticas, #propuestas, #asistente, #inicio { scroll-margin-top: 76px; }
+@media (max-width: 900px) {
+  nav { padding: 0 1rem; gap: 1rem; }
+  .nav-links { gap: 0.8rem; }
+  .nav-links a { font-size: 0.7rem; }
+}
+@media (max-width: 680px) {
+  nav { justify-content: flex-start; }
+  .nav-links { display: none; }
+  .nav-left { gap: 0.7rem; }
+  .nav-logo { font-size: 1.05rem; }
+  .nav-auth { margin-left: auto; }
+  #integrantes .section-inner { padding-left: 1rem; padding-right: 1rem; }
+}
+
+.integrante-escuela {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.6rem; text-align: center;
+  padding: 1.8rem 1.4rem; min-height: 180px;
+  background: var(--verde-oscuro, #1B4332); color: var(--crema, #F8F4ED);
+  border: 1px solid rgba(116, 198, 157, 0.35); border-radius: 4px;
+}
+.integrante-escuela .ie-ico {
+  width: 56px; height: 56px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.7rem;
+  background: rgba(116, 198, 157, 0.15); border: 1px solid rgba(116, 198, 157, 0.3);
+}
+.integrante-escuela .ie-label {
+  font-size: 0.7rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--verde-claro, #74C69D);
+}
+.integrante-escuela .ie-titulo {
+  font-family: 'Fraunces', serif; font-size: 1.15rem; font-weight: 600; line-height: 1.3;
+}
+
+
+/* ============================================
+   BUSCADOR DE PROPUESTAS
+============================================ */
+.buscador-prop { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
+.buscador-input-wrap { position: relative; flex: 1 1 220px; min-width: 0; }
+.buscador-ico {
+  position: absolute; left: 0.85rem; top: 50%; transform: translateY(-50%);
+  font-size: 0.95rem; pointer-events: none; opacity: 0.7;
+}
+.buscador-prop input[type="text"] {
+  width: 100%; box-sizing: border-box;
+  padding: 0.75rem 2.4rem 0.75rem 2.4rem;
+  font: inherit; font-size: 0.9rem; color: var(--pizarra);
+  background: var(--blanco); border: 1px solid var(--crema-oscura); border-radius: 4px;
+}
+.buscador-prop select {
+  flex: 0 1 190px; padding: 0.75rem 0.8rem;
+  font: inherit; font-size: 0.88rem; color: var(--pizarra);
+  background: var(--blanco); border: 1px solid var(--crema-oscura); border-radius: 4px;
+  cursor: pointer;
+}
+.buscador-prop input[type="text"]:focus, .buscador-prop select:focus {
+  outline: none; border-color: var(--verde-medio);
+  box-shadow: 0 0 0 3px rgba(64, 145, 108, 0.2);
+}
+.buscador-limpiar {
+  position: absolute; right: 0.4rem; top: 50%; transform: translateY(-50%);
+  width: 28px; height: 28px; border: none; border-radius: 50%;
+  background: transparent; color: var(--pizarra-claro);
+  font-size: 1.3rem; line-height: 1; cursor: pointer;
+}
+.buscador-limpiar:hover { background: var(--crema-oscura); }
+.buscador-resumen { min-height: 1.2rem; margin-bottom: 0.8rem; font-size: 0.78rem; color: var(--pizarra-claro); }
+.sin-resultados {
+  background: var(--blanco); border: 1px dashed var(--crema-oscura); border-radius: 6px;
+  padding: 2rem 1.25rem; text-align: center;
+}
+.sin-resultados p { margin: 0 0 1rem; font-size: 0.9rem; color: var(--pizarra-claro); line-height: 1.6; }
+
+
+/* ============================================
+   BUSCADOR DEL MAPA
+============================================ */
+.mapa-buscador { position: relative; margin-bottom: 0.8rem; }
+.mapa-buscador input[type="text"] {
+  width: 100%; box-sizing: border-box;
+  padding: 0.75rem 2.4rem 0.75rem 2.4rem;
+  font: inherit; font-size: 0.9rem; color: var(--pizarra);
+  background: var(--blanco); border: 1px solid var(--crema-oscura); border-radius: 4px;
+}
+.mapa-buscador input[type="text"]:focus {
+  outline: none; border-color: var(--verde-medio);
+  box-shadow: 0 0 0 3px rgba(64, 145, 108, 0.2);
+}
+.mapa-resultados {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 1050;
+  list-style: none; margin: 0; padding: 0.3rem;
+  background: var(--blanco); border: 1px solid var(--crema-oscura); border-radius: 6px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+  max-height: 320px; overflow-y: auto;
+}
+.mapa-resultados li {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.6rem 0.7rem; border-radius: 4px; cursor: pointer;
+}
+.mapa-resultados li:hover, .mapa-resultados li[aria-selected="true"] { background: rgba(64, 145, 108, 0.14); }
+.mapa-resultados .res-ico { font-size: 1.1rem; width: 1.5rem; text-align: center; flex-shrink: 0; }
+.mapa-resultados .res-txt { min-width: 0; }
+.mapa-resultados .res-titulo {
+  font-size: 0.88rem; font-weight: 600; color: var(--verde-oscuro);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mapa-resultados .res-sub {
+  font-size: 0.76rem; color: var(--pizarra-claro);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mapa-resultados li.res-vacio { cursor: default; color: var(--pizarra-claro); font-size: 0.86rem; }
+.mapa-resultados li.res-vacio:hover { background: transparent; }
+
+
+/* ============================================
+   GEOLOCALIZACIÓN DEL USUARIO
+============================================ */
+.filtro-btn.ubic { border-color: #2B6CB0; color: #2B6CB0; }
+.filtro-btn.ubic:hover, .filtro-btn.ubic.buscando { background: #2B6CB0; color: var(--blanco); }
+.filtro-btn.ubic.buscando { opacity: 0.8; cursor: progress; }
+
+.geo-estado { flex: 1 0 100%; font-size: 0.78rem; color: var(--pizarra-claro); line-height: 1.5; }
+.geo-estado:empty { display: none; }
+.geo-estado.ok { color: #2B6CB0; }
+.geo-estado.error { color: var(--rojo-calor); }
+
+.mapa-usuario {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: #2B6CB0; border: 3px solid var(--blanco);
+  box-shadow: 0 0 0 0 rgba(43, 108, 176, 0.5), 0 1px 5px rgba(0, 0, 0, 0.4);
+  animation: pulsoUsuario 2s ease-out infinite;
+}
+@keyframes pulsoUsuario {
+  0%   { box-shadow: 0 0 0 0 rgba(43, 108, 176, 0.5), 0 1px 5px rgba(0, 0, 0, 0.4); }
+  70%  { box-shadow: 0 0 0 16px rgba(43, 108, 176, 0), 0 1px 5px rgba(0, 0, 0, 0.4); }
+  100% { box-shadow: 0 0 0 0 rgba(43, 108, 176, 0), 0 1px 5px rgba(0, 0, 0, 0.4); }
+}
+@media (prefers-reduced-motion: reduce) { .mapa-usuario { animation: none; } }
