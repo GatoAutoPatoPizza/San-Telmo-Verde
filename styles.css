@@ -1300,3 +1300,29 @@ main .vista:not(#inicio) { min-height: 75vh; }
 }
 .mapa-resultados li.res-vacio { cursor: default; color: var(--pizarra-claro); font-size: 0.86rem; }
 .mapa-resultados li.res-vacio:hover { background: transparent; }
+
+
+/* ============================================
+   GEOLOCALIZACIÓN DEL USUARIO
+============================================ */
+.filtro-btn.ubic { border-color: #2B6CB0; color: #2B6CB0; }
+.filtro-btn.ubic:hover, .filtro-btn.ubic.buscando { background: #2B6CB0; color: var(--blanco); }
+.filtro-btn.ubic.buscando { opacity: 0.8; cursor: progress; }
+
+.geo-estado { flex: 1 0 100%; font-size: 0.78rem; color: var(--pizarra-claro); line-height: 1.5; }
+.geo-estado:empty { display: none; }
+.geo-estado.ok { color: #2B6CB0; }
+.geo-estado.error { color: var(--rojo-calor); }
+
+.mapa-usuario {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: #2B6CB0; border: 3px solid var(--blanco);
+  box-shadow: 0 0 0 0 rgba(43, 108, 176, 0.5), 0 1px 5px rgba(0, 0, 0, 0.4);
+  animation: pulsoUsuario 2s ease-out infinite;
+}
+@keyframes pulsoUsuario {
+  0%   { box-shadow: 0 0 0 0 rgba(43, 108, 176, 0.5), 0 1px 5px rgba(0, 0, 0, 0.4); }
+  70%  { box-shadow: 0 0 0 16px rgba(43, 108, 176, 0), 0 1px 5px rgba(0, 0, 0, 0.4); }
+  100% { box-shadow: 0 0 0 0 rgba(43, 108, 176, 0), 0 1px 5px rgba(0, 0, 0, 0.4); }
+}
+@media (prefers-reduced-motion: reduce) { .mapa-usuario { animation: none; } }
