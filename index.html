@@ -7,7 +7,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;0,600;0,800;1,300&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
       integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=5">
+  <link rel="stylesheet" href="styles.css?v=6">
   <!-- Google Identity Services (login real) -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <link rel="icon" type="image/png" href="logo.png">
@@ -209,6 +209,21 @@
           <div style="font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--pizarra-claro); margin-bottom: 1rem;">
             Propuestas activas · <span id="contadorProp">0</span> publicadas
           </div>
+          <div class="buscador-prop" role="search">
+            <div class="buscador-input-wrap">
+              <span class="buscador-ico" aria-hidden="true">🔍</span>
+              <input type="text" id="buscadorPropuestas" placeholder="Buscar por título, dirección, descripción o autor…" aria-label="Buscar propuestas" autocomplete="off">
+              <button type="button" id="buscadorLimpiar" class="buscador-limpiar hidden" aria-label="Borrar búsqueda">×</button>
+            </div>
+            <select id="buscadorTipo" aria-label="Filtrar por tipo de espacio">
+              <option value="">Todos los tipos</option>
+              <option value="Plaza de bolsillo">🌳 Plaza de bolsillo</option>
+              <option value="Techo verde">🌿 Techo verde</option>
+              <option value="Jardín comunitario">🌻 Jardín comunitario</option>
+              <option value="Arbolado urbano">🌲 Arbolado urbano</option>
+            </select>
+          </div>
+          <div id="buscadorResumen" class="buscador-resumen" aria-live="polite"></div>
           <div id="propuestasList" class="lista-propuestas">
             <div class="empty-propuestas" id="emptyPropuestas">
               <p>Todavía no hay propuestas. Sé el primero en proponer un espacio verde en el barrio.</p>
@@ -366,7 +381,7 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="script.js?v=2"></script>
+  <script src="script.js?v=3"></script>
   <script src="trivia.js"></script>
   <script src="escuela.js"></script>
 
@@ -374,7 +389,7 @@
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js')
       .then(() => console.log('Service Worker registrado correctamente'))
-      .catch((err) => console.error('Error al registrar Service Worker:', err));
+      .catch((err) => console.warn('No se pudo registrar el Service Worker (es opcional, la página funciona igual):', err.message));
   }
   </script>
 </body>
