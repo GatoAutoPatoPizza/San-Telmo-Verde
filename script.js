@@ -4,6 +4,22 @@
 ============================================ */
 
 const CENTRO_SAN_TELMO = [-34.6212, -58.3714];
+
+/* Fichas fijas del mapa (espacios verdes existentes e islas de calor).
+   Centralizadas acá (con id) para poder: 1) dibujar el marcador,
+   2) abrir su ficha de detalle al clickear el marcador, y
+   3) ubicarlas en el mapa desde un botón "Ver en el mapa". */
+const ESPACIOS_VERDES = [
+  { id: 'verde-lezama', lat: -34.6289, lng: -58.3697, simbolo: 'P', titulo: 'Parque Lezama', resumen: '7.2 ha · El más grande del barrio', detalle: 'El espacio verde más grande de San Telmo, con 7.2 hectáreas. Zona histórica con anfiteatro, el Museo Histórico Nacional y una gran variedad de árboles añosos.' },
+  { id: 'verde-dorrego', lat: -34.6212, lng: -58.3731, simbolo: '', titulo: 'Plazoleta Dorrego', resumen: '0.3 ha · Centro histórico', detalle: 'Plaza chica en pleno centro histórico de San Telmo, rodeada de anticuarios. Sede de la feria de los domingos.' },
+  { id: 'verde-humberto', lat: -34.6175, lng: -58.3720, simbolo: '', titulo: 'Plazoleta Calle Humberto', resumen: 'Pequeña plaza de barrio', detalle: 'Espacio verde chico sobre la calle Humberto Primo, de uso vecinal cotidiano.' },
+];
+
+const ISLAS_CALOR = [
+  { id: 'calor-norte', lat: -34.6165, lng: -58.3775, titulo: 'Isla de calor · Zona norte', resumen: '+3.2°C', detalle: 'Zona con muy poca cobertura verde y alta densidad de construcción, lo que eleva la temperatura superficial respecto al resto del barrio.' },
+  { id: 'calor-centro', lat: -34.6245, lng: -58.3715, titulo: 'Isla de calor · Zona central', resumen: '+2.8°C', detalle: 'Concentración de superficies de asfalto y hormigón sin arbolado que retienen calor durante el día y lo liberan de noche.' },
+  { id: 'calor-este', lat: -34.6195, lng: -58.3675, titulo: 'Isla de calor · Zona este', resumen: '+4.1°C', detalle: 'La zona con mayor diferencia de temperatura registrada del barrio, cerca de la avenida Paseo Colón, con escasa vegetación.' },
+];
 /* API_BASE vacío = rutas relativas ("/api/...").
    Así el front pega siempre al MISMO host que lo sirvió, sea
    http://localhost:3000, tu Codespace (*.app.github.dev) o
@@ -34,6 +50,8 @@ const Store = {
   usuario: null,
   votosUsuario: new Set(),
   marcadores: {},
+  marcadoresVerde: {},
+  marcadoresCalor: {},
   marcadorTemporal: null,
   modoUbicacion: false,
   mapa: null,
@@ -1140,6 +1158,15 @@ function popupPropuestaHTML(p) {
         title="${voted ? 'Quitar tu voto' : 'Sumar un voto'}">↑</button>
       <span>${p.votos} voto${p.votos === 1 ? '' : 's'}</span>
     </div>
+    <button type="button" class="popup-vermas-btn" onclick="abrirDetallePropuesta('${escapeHtml(p.id)}')">Ver más información →</button>
+  `;
+}
+
+function popupFichaHTML(f, tipo) {
+  return `
+    <strong>${escapeHtml(f.titulo)}</strong><br>
+    <span style="font-size:0.75rem;color:#4A5568">${escapeHtml(f.resumen)}</span>
+    <button type="button" class="popup-vermas-btn" onclick="abrirDetalleFicha('${tipo}', '${escapeHtml(f.id)}')">Ver más información →</button>
   `;
 }
 
@@ -1180,24 +1207,18 @@ function inicializarMapa() {
   Store.capas.calor = L.layerGroup().addTo(Store.mapa);
   Store.capas.prop = L.layerGroup().addTo(Store.mapa);
 
-  [
-    { lat: -34.6289, lng: -58.3697, popup: '<strong>Parque Lezama</strong><br>7.2 ha · El más grande del barrio', simbolo: 'P' },
-    { lat: -34.6212, lng: -58.3731, popup: '<strong>Plazoleta Dorrego</strong><br>0.3 ha · Centro histórico' },
-    { lat: -34.6175, lng: -58.3720, popup: 'Pequeña plaza · Calle Humberto' },
-  ].forEach((p) => {
-    L.marker([p.lat, p.lng], { icon: crearIcono('verde', p.simbolo || '') })
-      .bindPopup(p.popup)
+  ESPACIOS_VERDES.forEach((f) => {
+    const marker = L.marker([f.lat, f.lng], { icon: crearIcono('verde', f.simbolo || '') })
+      .bindPopup(popupFichaHTML(f, 'verde'))
       .addTo(Store.capas.verde);
+    Store.marcadoresVerde[f.id] = marker;
   });
 
-  [
-    { lat: -34.6165, lng: -58.3775, popup: 'Isla de calor · Zona norte · +3.2°C' },
-    { lat: -34.6245, lng: -58.3715, popup: 'Isla de calor · Zona central · +2.8°C' },
-    { lat: -34.6195, lng: -58.3675, popup: 'Isla de calor · Zona este · +4.1°C' },
-  ].forEach((p) => {
-    L.marker([p.lat, p.lng], { icon: crearIcono('calor', '!') })
-      .bindPopup(p.popup)
+  ISLAS_CALOR.forEach((f) => {
+    const marker = L.marker([f.lat, f.lng], { icon: crearIcono('calor', '!') })
+      .bindPopup(popupFichaHTML(f, 'calor'))
       .addTo(Store.capas.calor);
+    Store.marcadoresCalor[f.id] = marker;
   });
 
   Store.mapa.on('click', onMapClick);
@@ -1279,6 +1300,9 @@ function tarjetaPropuestaHTML(p) {
         <span class="pcard-usuario">${escapeHtml(p.nombre_usuario)} · ${formatearFecha(p.created_at)}</span>
         <span class="pcard-estado ${estadoClass(p.estado)}">${escapeHtml(p.estado || 'Nueva')}</span>
       </div>
+      ${p.latitud != null && p.longitud != null
+        ? `<button type="button" class="pcard-ver-mapa" onclick="irAMapa(${p.latitud}, ${p.longitud}, 'prop', '${escapeHtml(p.id)}')">📍 Ver en el mapa</button>`
+        : ''}
     </div>
   `;
 }
@@ -1305,18 +1329,12 @@ function renderListaPropuestas() {
 function renderPanelLateral() {
   const panel = document.getElementById('mapaPanel');
   if (!panel) return;
-  let html = `
-    <div class="panel-card">
-      <h4>🌳 Parque Lezama</h4>
-      <p>El espacio verde más grande de San Telmo con 7.2 hectáreas.</p>
-      <span class="tag">ACTIVO · 7.2 ha</span>
-    </div>
-    <div class="panel-card">
-      <h4>🌳 Plazoleta Dorrego</h4>
-      <p>Plaza histórica del centro de San Telmo · 0.3 ha.</p>
-      <span class="tag">ACTIVO · Histórico</span>
-    </div>
-  `;
+  let html = ESPACIOS_VERDES.slice(0, 2).map((f) => `
+    <div class="panel-card" onclick="abrirDetalleFicha('verde', '${f.id}')" style="cursor:pointer">
+      <h4>🌳 ${escapeHtml(f.titulo)}</h4>
+      <p>${escapeHtml(f.detalle)}</p>
+      <span class="tag">ACTIVO · ${escapeHtml(f.resumen)}</span>
+    </div>`).join('');
   const top = select.topPropuestas(3);
   if (top.length === 0) {
     html += `
@@ -1386,11 +1404,16 @@ function abrirModalTotal() {
   const modal = document.getElementById('modalTotal');
   const content = document.getElementById('modalBodyContent');
   if (!modal || !content) return;
-  let html = '<div class="modal-section-title">Fichas del mapa</div>';
-  html += `
-    <div class="panel-card" style="margin-bottom:0.5rem"><h4>🌳 Parque Lezama</h4><p>7.2 ha · Espacio verde principal</p><span class="tag">ACTIVO</span></div>
-    <div class="panel-card" style="margin-bottom:0.5rem"><h4>🌳 Plazoleta Dorrego</h4><p>0.3 ha · Centro histórico</p><span class="tag">ACTIVO</span></div>
-  `;
+  let html = '<div class="modal-section-title">Espacios verdes existentes</div>';
+  html += ESPACIOS_VERDES.map((f) => `
+    <div class="panel-card" style="margin-bottom:0.5rem;cursor:pointer" onclick="abrirDetalleFicha('verde', '${f.id}')">
+      <h4>🌳 ${escapeHtml(f.titulo)}</h4><p>${escapeHtml(f.resumen)}</p><span class="tag">ACTIVO</span>
+    </div>`).join('');
+  html += '<div class="modal-section-title" style="margin-top:1.5rem">Islas de calor</div>';
+  html += ISLAS_CALOR.map((f) => `
+    <div class="panel-card" style="margin-bottom:0.5rem;cursor:pointer" onclick="abrirDetalleFicha('calor', '${f.id}')">
+      <h4>🌡️ ${escapeHtml(f.titulo)}</h4><p>${escapeHtml(f.resumen)}</p><span class="tag">ACTIVO</span>
+    </div>`).join('');
   html += '<div class="modal-section-title" style="margin-top:1.5rem">Propuestas ciudadanas</div>';
   const activas = select.propuestasActivas();
   if (activas.length === 0) {
@@ -1406,6 +1429,72 @@ function abrirModalTotal() {
 
 function cerrarModalTotal() {
   document.getElementById('modalTotal')?.classList.remove('active');
+}
+
+// ── Detalle de una ficha o propuesta (desde el marcador del mapa, "Ver más") ──
+
+function abrirDetalle(titulo, html) {
+  const modal = document.getElementById('modalDetalle');
+  const tituloEl = document.getElementById('modalDetalleTitulo');
+  const content = document.getElementById('modalDetalleContent');
+  if (!modal || !content) return;
+  if (tituloEl) tituloEl.textContent = titulo;
+  content.innerHTML = html;
+  modal.classList.add('active');
+}
+
+function cerrarModalDetalle() {
+  document.getElementById('modalDetalle')?.classList.remove('active');
+}
+
+function abrirDetallePropuesta(id) {
+  const p = Store.propuestas.find((x) => String(x.id) === String(id));
+  if (!p) return;
+  cerrarModalTotal();
+  abrirDetalle(p.titulo, tarjetaPropuestaHTML(p));
+}
+
+function abrirDetalleFicha(tipo, id) {
+  const lista = tipo === 'verde' ? ESPACIOS_VERDES : ISLAS_CALOR;
+  const f = lista.find((x) => x.id === id);
+  if (!f) return;
+  const icono = tipo === 'verde' ? '🌳' : '🌡️';
+  const html = `
+    <div class="panel-card">
+      <h4>${icono} ${escapeHtml(f.titulo)}</h4>
+      <p>${escapeHtml(f.detalle)}</p>
+      <span class="tag">${escapeHtml(f.resumen)}</span>
+    </div>
+    <button type="button" class="btn-ver-en-mapa" onclick="irAMapa(${f.lat}, ${f.lng}, '${tipo}', '${escapeHtml(f.id)}')">📍 Ver ubicación en el mapa</button>
+  `;
+  abrirDetalle(f.titulo, html);
+}
+
+// ── "Ver en el mapa" (desde una tarjeta o ficha de detalle) ──
+
+function irAMapa(lat, lng, tipo, id) {
+  cerrarModalDetalle();
+  cerrarModalTotal();
+  mostrarVista('mapa');
+  // Esperamos a que la vista del mapa esté visible y aplicarVista() ya haya
+  // corrido su propio invalidateSize() (a los 60ms) antes de centrar,
+  // para que Leaflet calcule bien el tamaño del contenedor.
+  setTimeout(() => {
+    if (!Store.mapa) return;
+    Store.mapa.invalidateSize();
+    Store.mapa.flyTo([lat, lng], 18, { duration: 0.8 });
+    const grupo = tipo === 'prop' ? Store.marcadores : tipo === 'verde' ? Store.marcadoresVerde : Store.marcadoresCalor;
+    const marker = grupo[id];
+    if (!marker) return;
+    setTimeout(() => {
+      marker.openPopup();
+      const el = marker.getElement();
+      if (el) {
+        el.classList.add('marcador-resaltado');
+        setTimeout(() => el.classList.remove('marcador-resaltado'), 1800);
+      }
+    }, 850);
+  }, 150);
 }
 
 function animarBarrasAlEntrar() {
@@ -1610,6 +1699,7 @@ async function init() {
   });
   document.getElementById('modalTotal')?.addEventListener('click', (e) => {
     if (e.target.id === 'modalTotal') cerrarModalTotal();
+    if (e.target.id === 'modalDetalle') cerrarModalDetalle();
   });
   document.getElementById('modalModeracion')?.addEventListener('click', (e) => {
     if (e.target.id === 'modalModeracion') cerrarModalModeracion();
