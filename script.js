@@ -1307,22 +1307,82 @@ function tarjetaPropuestaHTML(p) {
   `;
 }
 
+// ——— Buscador de propuestas ———
+const FiltroProp = { texto: '', tipo: '' };
+
+// Minúsculas y sin tildes: "plaza" encuentra "Plaza", "jardin" encuentra "Jardín"
+function normalizarBusqueda(s) {
+  return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
+
+function propuestaCoincide(p) {
+  if (FiltroProp.tipo && p.tipo !== FiltroProp.tipo) return false;
+  const terminos = normalizarBusqueda(FiltroProp.texto).split(/\s+/).filter(Boolean);
+  if (terminos.length === 0) return true;
+  const pajar = normalizarBusqueda([p.titulo, p.direccion, p.descripcion, p.nombre_usuario, p.tipo, p.estado].join(' '));
+  return terminos.every((t) => pajar.includes(t)); // deben aparecer todas las palabras
+}
+
+function limpiarBuscador() {
+  FiltroProp.texto = '';
+  FiltroProp.tipo = '';
+  const inp = document.getElementById('buscadorPropuestas');
+  const sel = document.getElementById('buscadorTipo');
+  if (inp) inp.value = '';
+  if (sel) sel.value = '';
+  document.getElementById('buscadorLimpiar')?.classList.add('hidden');
+  renderListaPropuestas();
+}
+
+function activarBuscador() {
+  const inp = document.getElementById('buscadorPropuestas');
+  const sel = document.getElementById('buscadorTipo');
+  const btn = document.getElementById('buscadorLimpiar');
+  if (!inp || !sel) return;
+  inp.addEventListener('input', () => {
+    FiltroProp.texto = inp.value;
+    btn?.classList.toggle('hidden', !inp.value);
+    renderListaPropuestas();
+  });
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Escape') limpiarBuscador(); });
+  sel.addEventListener('change', () => { FiltroProp.tipo = sel.value; renderListaPropuestas(); });
+  btn?.addEventListener('click', () => { limpiarBuscador(); inp.focus(); });
+}
+
 function renderListaPropuestas() {
   const lista = document.getElementById('propuestasList');
   const contador = document.getElementById('contadorProp');
   const statP = document.getElementById('statPropuestas');
+  const resumen = document.getElementById('buscadorResumen');
   const activas = select.propuestasActivas();
   if (contador) contador.textContent = String(activas.length);
   if (statP) statP.textContent = String(activas.length);
   if (!lista) return;
   if (activas.length === 0) {
+    if (resumen) resumen.textContent = '';
     lista.innerHTML = `
       <div class="empty-propuestas" id="emptyPropuestas">
         <p>Todavía no hay propuestas. Sé el primero en proponer un espacio verde en el barrio.</p>
       </div>`;
     return;
   }
-  const ordenadas = [...activas].sort((a, b) => (b.votos || 0) - (a.votos || 0));
+  const filtrando = Boolean(FiltroProp.texto.trim() || FiltroProp.tipo);
+  const visibles = activas.filter(propuestaCoincide);
+  if (resumen) {
+    resumen.textContent = filtrando
+      ? `Mostrando ${visibles.length} de ${activas.length} propuestas`
+      : '';
+  }
+  if (visibles.length === 0) {
+    const q = FiltroProp.texto.trim();
+    lista.innerHTML = `
+      <div class="sin-resultados">
+        <p>No encontramos propuestas${q ? ` para «${escapeHtml(q)}»` : ''}${FiltroProp.tipo ? ` de tipo ${escapeHtml(FiltroProp.tipo)}` : ''}.<br>Probá con otras palabras o quitá los filtros.</p>
+        <button type="button" class="btn-primary btn-sm" onclick="limpiarBuscador()">Limpiar búsqueda</button>
+      </div>`;
+    return;
+  }
+  const ordenadas = [...visibles].sort((a, b) => (b.votos || 0) - (a.votos || 0));
   lista.innerHTML = ordenadas.map(tarjetaPropuestaHTML).join('');
 }
 
@@ -1691,6 +1751,7 @@ async function intentarCargarDesdeAPI() {
 async function init() {
   activarNavegacion(); // primero el menú, así anda aunque falle el mapa
   renderIntegrantes();
+  activarBuscador();
   hydrateStore();
   inicializarMapa();
   animarBarrasAlEntrar();
