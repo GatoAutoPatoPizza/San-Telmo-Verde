@@ -2118,10 +2118,14 @@ function iniciarKonami() {
   function manejarKonami(event) {
     if (!activo) return;
 
-    const teclaPresionada = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-    const teclaEsperada = codigoKonami[indiceKonami].toLowerCase();
+    // 'b'/'a' comparan sin importar mayúsculas; 'ArrowUp' etc. se comparan
+    // TAL CUAL las entrega el navegador (nunca en minúsculas: "arrowup" no
+    // es igual a "ArrowUp"). Antes se bajaba a minúsculas SOLO lo esperado
+    // y no lo presionado para las flechas, por eso nunca coincidían.
+    const coincideCon = (tecla) =>
+      tecla.length === 1 ? event.key.toLowerCase() === tecla.toLowerCase() : event.key === tecla;
 
-    if (teclaPresionada === teclaEsperada) {
+    if (coincideCon(codigoKonami[indiceKonami])) {
       indiceKonami++;
       if (indiceKonami === codigoKonami.length) {
         clearTimeout(temporizador); // Cancela el reloj si lo activó a tiempo
@@ -2129,7 +2133,7 @@ function iniciarKonami() {
         indiceKonami = 0;
       }
     } else {
-      indiceKonami = teclaPresionada === codigoKonami[0].toLowerCase() ? 1 : 0;
+      indiceKonami = coincideCon(codigoKonami[0]) ? 1 : 0;
     }
   }
 
