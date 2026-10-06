@@ -1723,6 +1723,8 @@ function enfocarMarcador(lat, lng, tipo, id) {
   setTimeout(() => {
     if (!Store.mapa) return;
     Store.mapa.invalidateSize();
+    // aplicarVista() sube la página al tope; acá traemos el mapa al centro de la pantalla
+    document.querySelector('#mapa .mapa-canvas')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     Store.mapa.flyTo([lat, lng], 18, { duration: 0.8 });
     const grupo = tipo === 'prop' ? Store.marcadores : tipo === 'verde' ? Store.marcadoresVerde : Store.marcadoresCalor;
     const marker = grupo[id];

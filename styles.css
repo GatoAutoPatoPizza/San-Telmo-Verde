@@ -1356,3 +1356,67 @@ main .vista:not(#inicio) { min-height: 75vh; }
   100% { box-shadow: 0 0 0 0 rgba(43, 108, 176, 0), 0 1px 5px rgba(0, 0, 0, 0.4); }
 }
 @media (prefers-reduced-motion: reduce) { .mapa-usuario { animation: none; } }
+
+/* ============================================
+   DIRECTORIO DE TARJETAS: 2 columnas en el mismo espacio
+============================================ */
+#modalTotal .modal-box { max-width: 980px; }
+#modalTotal .modal-body { gap: 0.8rem; }
+#modalResultados {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem; align-items: start;
+}
+#modalResultados > * { margin-bottom: 0 !important; min-width: 0; }
+#modalResultados > .modal-section-title,
+#modalResultados > p { grid-column: 1 / -1; }
+#modalResultados .pcard-desc,
+#modalResultados .panel-card p {
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.lista-header { position: sticky; top: -1.5rem; z-index: 3; }
+
+/* ============================================
+   MÓVIL: encabezado y página menos amontonados
+============================================ */
+@media (max-width: 680px) {
+  nav { padding: 0 0.75rem; gap: 0.5rem; }
+  .nav-left { gap: 0.5rem; flex: 1 1 auto; }
+  .hamburger { flex: 0 0 38px; width: 38px; height: 38px; }
+  .nav-logo { font-size: 1rem; overflow: hidden; text-overflow: ellipsis; }
+  .nav-auth { flex: 0 0 auto; gap: 0.4rem; }
+  .btn-auth { padding: 0.4rem 0.7rem; font-size: 0.75rem; }
+  .btn-auth svg { display: none; }
+  .btn-auth-out { padding: 0.35rem 0.6rem; }
+  .nav-user { gap: 0.4rem; }
+  .nav-user-name { display: none; }          /* queda el avatar; el nombre no entra */
+  .btn-mod { padding: 0.35rem 0.55rem; font-size: 0.72rem; }
+
+  section { padding: 3rem 1rem; }
+  .section-title { font-size: 1.7rem; }
+  .section-desc { font-size: 0.9rem; margin-bottom: 1.8rem; }
+  .mapa-grid { gap: 1.2rem; }
+  .mapa-canvas { height: 380px; }
+  .filtros-mapa { gap: 0.4rem; margin-bottom: 1rem; }
+  .filtros-mapa .filtro-btn { flex: 1 1 calc(50% - 0.4rem); justify-content: center; font-size: 0.78rem; padding: 0.55rem 0.6rem; }
+  .stat-cell { padding: 1.3rem 1rem; }
+  .propuesta-form, .panel-card { padding-left: 1rem; padding-right: 1rem; }
+  .buscador-prop select { flex: 1 1 100%; }
+}
+
+@media (max-width: 560px) {
+  /* modales a casi pantalla completa y una sola columna (2 tarjetas no entran de ancho) */
+  .modal-box { width: 96%; max-height: 90vh; }
+  .modal-header { padding: 0.9rem 1rem; }
+  .modal-header h3 { font-size: 1.05rem; }
+  .modal-body { padding: 1rem; }
+  .lista-header { top: -1rem; }
+  .lista-header .lista-tab { font-size: 0.74rem; padding: 0.6rem 0.4rem; flex-direction: column; gap: 0.15rem; }
+  #modalResultados { grid-template-columns: 1fr; gap: 0.6rem; }
+  #modalResultados .pcard-desc,
+  #modalResultados .panel-card p { -webkit-line-clamp: 2; }
+}
+#modalResumen:empty { display: none; }
+#modalTotal .buscador-prop { margin-bottom: 0; }
+@media (max-width: 560px) {
+  #modalTotal .modal-box { margin-top: 60px; max-height: calc(100vh - 80px); }
+}
