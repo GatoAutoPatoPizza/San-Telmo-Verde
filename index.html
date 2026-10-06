@@ -216,24 +216,32 @@
           </div>
         </div>
         <div>
-          <div style="font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--pizarra-claro); margin-bottom: 1rem;">
-            Propuestas activas · <span id="contadorProp">0</span> publicadas
+          <div class="lista-tabs" id="listaTabs">
+            <button type="button" class="lista-tab active" data-tab="propuestas" onclick="cambiarTabLista('propuestas')">📋 Propuestas <span id="contadorTabProp">0</span></button>
+            <button type="button" class="lista-tab" data-tab="verde" onclick="cambiarTabLista('verde')">🌳 Espacios verdes <span id="contadorTabVerde">0</span></button>
+            <button type="button" class="lista-tab" data-tab="calor" onclick="cambiarTabLista('calor')">🌡️ Islas de calor <span id="contadorTabCalor">0</span></button>
           </div>
-          <div class="buscador-prop" role="search">
-            <div class="buscador-input-wrap">
-              <span class="buscador-ico" aria-hidden="true">🔍</span>
-              <input type="text" id="buscadorPropuestas" placeholder="Buscar por título, dirección, descripción o autor…" aria-label="Buscar propuestas" autocomplete="off">
-              <button type="button" id="buscadorLimpiar" class="buscador-limpiar hidden" aria-label="Borrar búsqueda">×</button>
+          <div id="propuestasControles">
+            <div style="font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--pizarra-claro); margin-bottom: 1rem;">
+              Propuestas activas · <span id="contadorProp">0</span> publicadas
             </div>
-            <select id="buscadorTipo" aria-label="Filtrar por tipo de espacio">
-              <option value="">Todos los tipos</option>
-              <option value="Plaza de bolsillo">🌳 Plaza de bolsillo</option>
-              <option value="Techo verde">🌿 Techo verde</option>
-              <option value="Jardín comunitario">🌻 Jardín comunitario</option>
-              <option value="Arbolado urbano">🌲 Arbolado urbano</option>
-            </select>
+            <div class="buscador-prop" role="search">
+              <div class="buscador-input-wrap">
+                <span class="buscador-ico" aria-hidden="true">🔍</span>
+                <input type="text" id="buscadorPropuestas" placeholder="Buscar por título, dirección, descripción o autor…" aria-label="Buscar propuestas" autocomplete="off">
+                <button type="button" id="buscadorLimpiar" class="buscador-limpiar hidden" aria-label="Borrar búsqueda">×</button>
+              </div>
+              <select id="buscadorTipo" aria-label="Filtrar por tipo de espacio">
+                <option value="">Todos los tipos</option>
+                <option value="Plaza de bolsillo">🌳 Plaza de bolsillo</option>
+                <option value="Techo verde">🌿 Techo verde</option>
+                <option value="Jardín comunitario">🌻 Jardín comunitario</option>
+                <option value="Arbolado urbano">🌲 Arbolado urbano</option>
+              </select>
+            </div>
+            <div id="buscadorResumen" class="buscador-resumen" aria-live="polite"></div>
           </div>
-          <div id="buscadorResumen" class="buscador-resumen" aria-live="polite"></div>
+          <div id="fichasLabel" class="fichas-label hidden"></div>
           <div id="propuestasList" class="lista-propuestas">
             <div class="empty-propuestas" id="emptyPropuestas">
               <p>Todavía no hay propuestas. Sé el primero en proponer un espacio verde en el barrio.</p>

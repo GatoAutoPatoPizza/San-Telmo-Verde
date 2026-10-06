@@ -62,6 +62,8 @@ const Store = {
   mapa: null,
   capas: { verde: null, calor: null, prop: null },
   filtros: { verde: true, calor: true, prop: true },
+  tabLista: 'propuestas', // pestaña activa del menú: 'propuestas' | 'verde' | 'calor'
+  resaltarAlRenderizar: null, // { tipo, id } — para "ver en la lista" desde el mapa
 };
 
 function loadJSON(key, fallback) {
@@ -1354,7 +1356,71 @@ function activarBuscador() {
   btn?.addEventListener('click', () => { limpiarBuscador(); inp.focus(); });
 }
 
+function cambiarTabLista(tab) {
+  Store.tabLista = tab;
+  document.querySelectorAll('.lista-tab').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+  const controles = document.getElementById('propuestasControles');
+  const label = document.getElementById('fichasLabel');
+  if (controles) controles.classList.toggle('hidden', tab !== 'propuestas');
+  if (label) label.classList.toggle('hidden', tab === 'propuestas');
+  renderListaPropuestas();
+}
+
+function actualizarContadoresTabs() {
+  const cp = document.getElementById('contadorTabProp');
+  const cv = document.getElementById('contadorTabVerde');
+  const cc = document.getElementById('contadorTabCalor');
+  if (cp) cp.textContent = String(select.propuestasActivas().length);
+  if (cv) cv.textContent = String(ESPACIOS_VERDES.length);
+  if (cc) cc.textContent = String(ISLAS_CALOR.length);
+}
+
+// Resalta y centra en pantalla una tarjeta ya renderizada (usado al venir
+// desde "Ver detalladamente" en el mapa, para mostrarla en contexto entre
+// las demás en vez de abrir un modal aislado).
+function resaltarTarjetaEnLista(id) {
+  const tarjeta = document.querySelector(`#propuestasList .propuesta-card[data-id="${CSS.escape(String(id))}"]`);
+  if (!tarjeta) return;
+  tarjeta.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  tarjeta.classList.add('pcard-resaltada');
+  setTimeout(() => tarjeta.classList.remove('pcard-resaltada'), 1700);
+}
+
+function renderListaFichas(tipo) {
+  const lista = document.getElementById('propuestasList');
+  const label = document.getElementById('fichasLabel');
+  if (!lista) return;
+  const datos = tipo === 'verde' ? ESPACIOS_VERDES : ISLAS_CALOR;
+  const icono = tipo === 'verde' ? '🌳' : '🌡️';
+  if (label) {
+    label.textContent = tipo === 'verde'
+      ? `Espacios verdes existentes · ${datos.length} registrados`
+      : `Islas de calor relevadas · ${datos.length} registradas`;
+  }
+  lista.innerHTML = datos.map((f) => `
+    <div class="propuesta-card ficha-card panel-card ${tipo === 'calor' ? 'calor' : ''}" data-id="${escapeHtml(f.id)}">
+      <h4>${icono} ${escapeHtml(f.titulo)}</h4>
+      <p>${escapeHtml(f.detalle)}</p>
+      <span class="tag">${escapeHtml(f.resumen)}</span>
+      <button type="button" class="pcard-ver-mapa" onclick="irAMapa(${f.lat}, ${f.lng}, '${tipo}', '${escapeHtml(f.id)}')">📍 Ver en el mapa</button>
+    </div>`).join('');
+}
+
 function renderListaPropuestas() {
+  actualizarContadoresTabs();
+  const tab = Store.tabLista || 'propuestas';
+  if (tab === 'verde' || tab === 'calor') {
+    renderListaFichas(tab);
+    if (Store.resaltarAlRenderizar && Store.resaltarAlRenderizar.tipo === tab) {
+      const { id } = Store.resaltarAlRenderizar;
+      Store.resaltarAlRenderizar = null;
+      setTimeout(() => resaltarTarjetaEnLista(id), 150);
+    }
+    return;
+  }
+
   const lista = document.getElementById('propuestasList');
   const contador = document.getElementById('contadorProp');
   const statP = document.getElementById('statPropuestas');
@@ -1389,6 +1455,12 @@ function renderListaPropuestas() {
   }
   const ordenadas = [...visibles].sort((a, b) => (b.votos || 0) - (a.votos || 0));
   lista.innerHTML = ordenadas.map(tarjetaPropuestaHTML).join('');
+
+  if (Store.resaltarAlRenderizar && Store.resaltarAlRenderizar.tipo === 'propuestas') {
+    const { id } = Store.resaltarAlRenderizar;
+    Store.resaltarAlRenderizar = null;
+    setTimeout(() => resaltarTarjetaEnLista(id), 150);
+  }
 }
 
 function renderPanelLateral() {
@@ -1512,27 +1584,29 @@ function cerrarModalDetalle() {
   document.getElementById('modalDetalle')?.classList.remove('active');
 }
 
+// "Ver detalladamente" desde el mapa (o desde el panel lateral): en vez de
+// un modal aislado, llevamos al menú de propuestas, mostramos la pestaña
+// correspondiente y resaltamos la tarjeta en su lugar, rodeada de las demás.
 function abrirDetallePropuesta(id) {
   const p = Store.propuestas.find((x) => String(x.id) === String(id));
   if (!p) return;
   cerrarModalTotal();
-  abrirDetalle(p.titulo, tarjetaPropuestaHTML(p));
+  cerrarModalDetalle();
+  limpiarBuscador(); // por si había un filtro activo que la ocultaría
+  Store.resaltarAlRenderizar = { tipo: 'propuestas', id: p.id };
+  mostrarVista('propuestas');
+  cambiarTabLista('propuestas');
 }
 
 function abrirDetalleFicha(tipo, id) {
   const lista = tipo === 'verde' ? ESPACIOS_VERDES : ISLAS_CALOR;
   const f = lista.find((x) => x.id === id);
   if (!f) return;
-  const icono = tipo === 'verde' ? '🌳' : '🌡️';
-  const html = `
-    <div class="panel-card">
-      <h4>${icono} ${escapeHtml(f.titulo)}</h4>
-      <p>${escapeHtml(f.detalle)}</p>
-      <span class="tag">${escapeHtml(f.resumen)}</span>
-    </div>
-    <button type="button" class="btn-ver-en-mapa" onclick="irAMapa(${f.lat}, ${f.lng}, '${tipo}', '${escapeHtml(f.id)}')">📍 Ver ubicación en el mapa</button>
-  `;
-  abrirDetalle(f.titulo, html);
+  cerrarModalTotal();
+  cerrarModalDetalle();
+  Store.resaltarAlRenderizar = { tipo, id: f.id };
+  mostrarVista('propuestas');
+  cambiarTabLista(tipo);
 }
 
 // ── "Ver en el mapa" (desde una tarjeta o ficha de detalle) ──
@@ -2020,11 +2094,10 @@ if (document.readyState === 'loading') {
 
 
 
-// Codigo SECRETO KONAMI
-
+// ____ Codigo SECRETO KONAMI ______
 let SANTELMOURL = 'https://www.youtube.com/watch?v=q7dfO4XJMoM';
 
-document.addEventListener('DOMContentLoaded', () => {
+function iniciarKonami() {
   const codigoKonami = [
     'ArrowUp', 'ArrowUp',
     'ArrowDown', 'ArrowDown',
@@ -2034,23 +2107,46 @@ document.addEventListener('DOMContentLoaded', () => {
   ];
 
   let indiceKonami = 0;
+  let activo = true;
 
-  window.addEventListener('keydown', (event) => {
-    const teclaPresionada = event.key.toLowerCase(); // minúsculas siempre, igual que codigoKonami
+  // Temporizador: Desactiva la escucha a los 10 segundos
+  const temporizador = setTimeout(() => {
+    activo = false;
+    window.removeEventListener('keydown', manejarKonami);
+  }, 10000); // 10000 ms = 10 segundos
+
+  function manejarKonami(event) {
+    if (!activo) return;
+
+    const teclaPresionada = event.key.length === 1 ? event.key.toLowerCase() : event.key;
     const teclaEsperada = codigoKonami[indiceKonami].toLowerCase();
 
     if (teclaPresionada === teclaEsperada) {
       indiceKonami++;
       if (indiceKonami === codigoKonami.length) {
+        clearTimeout(temporizador); // Cancela el reloj si lo activó a tiempo
         activarSecreto();
         indiceKonami = 0;
       }
     } else {
       indiceKonami = teclaPresionada === codigoKonami[0].toLowerCase() ? 1 : 0;
     }
-  });
+  }
+
+  // Escucha el teclado asignando la función con nombre para poder removerla después
+  window.addEventListener('keydown', manejarKonami);
 
   function activarSecreto() {
     window.location.href = SANTELMOURL;
   }
-});
+}
+
+// script.js se carga al final del <body>, así que cuando este código corre,
+// el DOMContentLoaded casi siempre YA DISPARÓ — por eso el
+// addEventListener('DOMContentLoaded', ...) de antes nunca se ejecutaba
+// (el evento ya había pasado). Mismo patrón de arreglo que usa init() más arriba.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', iniciarKonami);
+} else {
+  iniciarKonami();
+}
