@@ -216,10 +216,14 @@
           </div>
         </div>
         <div>
-          <div class="lista-tabs" id="listaTabs">
-            <button type="button" class="lista-tab active" data-tab="propuestas" onclick="cambiarTabLista('propuestas')">📋 Propuestas <span id="contadorTabProp">0</span></button>
-            <button type="button" class="lista-tab" data-tab="verde" onclick="cambiarTabLista('verde')">🌳 Espacios verdes <span id="contadorTabVerde">0</span></button>
-            <button type="button" class="lista-tab" data-tab="calor" onclick="cambiarTabLista('calor')">🌡️ Islas de calor <span id="contadorTabCalor">0</span></button>
+          <div class="lista-header" id="listaTabs" role="tablist" aria-label="Menú de tarjetas">
+            <button type="button" class="lista-tab active" role="tab" aria-selected="true" data-tab="propuestas" onclick="cambiarTabLista('propuestas')">📋 Solo propuestas <span id="contadorTabProp">0</span></button>
+            <button type="button" class="lista-tab" role="tab" aria-selected="false" data-tab="zonas" onclick="cambiarTabLista('zonas')">🌳🌡️ Zonas verdes y olas de calor <span id="contadorTabZonas">0</span></button>
+          </div>
+          <div class="zonas-filtros hidden" id="zonasFiltros" role="group" aria-label="Filtrar zonas">
+            <button type="button" class="zona-chip active" data-sub="todas" onclick="cambiarSubZona('todas')">Todas</button>
+            <button type="button" class="zona-chip" data-sub="verde" onclick="cambiarSubZona('verde')">🌳 Espacios verdes <span id="contadorTabVerde">0</span></button>
+            <button type="button" class="zona-chip" data-sub="calor" onclick="cambiarSubZona('calor')">🌡️ Islas de calor <span id="contadorTabCalor">0</span></button>
           </div>
           <div id="propuestasControles">
             <div style="font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--pizarra-claro); margin-bottom: 1rem;">

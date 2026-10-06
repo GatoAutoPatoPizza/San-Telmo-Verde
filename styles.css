@@ -799,6 +799,14 @@ footer { background: var(--pizarra); padding: 3rem 2rem; text-align: center; }
 .lista-tab span { background: rgba(0,0,0,0.08); border-radius: 99px; padding: 0.05rem 0.45rem; font-size: 0.72rem; }
 .lista-tab.active { color: var(--verde-oscuro); background: rgba(64,145,108,0.1); }
 .lista-tab.active span { background: rgba(64,145,108,0.2); }
+.lista-header { display: flex; gap: 0.35rem; padding: 0.3rem; margin-bottom: 1rem; background: var(--crema-oscura); border-radius: 12px; }
+.lista-header .lista-tab { flex: 1 1 0; justify-content: center; text-align: center; padding: 0.7rem 0.9rem; font-size: 0.82rem; border-radius: 9px; }
+.lista-header .lista-tab.active { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.12); }
+.zonas-filtros { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.zonas-filtros.hidden { display: none; }
+.zona-chip { background: none; border: 1px solid var(--crema-oscura); border-radius: 99px; padding: 0.3rem 0.8rem; font-size: 0.75rem; font-weight: 600; color: var(--pizarra-claro); cursor: pointer; font-family: inherit; display: inline-flex; gap: 0.35rem; align-items: center; }
+.zona-chip span { background: rgba(0,0,0,0.08); border-radius: 99px; padding: 0 0.4rem; font-size: 0.7rem; }
+.zona-chip.active { background: rgba(64,145,108,0.12); border-color: var(--verde-oscuro); color: var(--verde-oscuro); }
 .fichas-label { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--pizarra-claro); margin-bottom: 1rem; }
 
 /* Resalte momentáneo de la tarjeta al llegar desde "Ver detalladamente" en el mapa */
