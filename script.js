@@ -1642,7 +1642,7 @@ function renderResultadosModal() {
       html += `<div class="modal-section-title"${primero ? '' : ' style="margin-top:1.5rem"'}>${g.titulo}</div>`;
       primero = false;
       html += visibles.map((f) => `
-        <div class="panel-card" style="margin-bottom:0.5rem;cursor:pointer" onclick="abrirDetalleFicha('${g.tipo}', '${f.id}')">
+        <div class="panel-card" data-id="${escapeHtml(f.id)}" style="margin-bottom:0.5rem;cursor:pointer" onclick="abrirDetalleFicha('${g.tipo}', '${f.id}')">
           <h4>${g.icono} ${escapeHtml(f.titulo)}</h4><p>${escapeHtml(f.resumen)}</p><span class="tag">ACTIVO</span>
         </div>`).join('');
     });
@@ -1673,29 +1673,36 @@ function cerrarModalDetalle() {
   document.getElementById('modalDetalle')?.classList.remove('active');
 }
 
-// "Ver detalladamente" desde el mapa (o desde el panel lateral): en vez de
-// un modal aislado, llevamos al menú de propuestas, mostramos la pestaña
-// correspondiente y resaltamos la tarjeta en su lugar, rodeada de las demás.
+// "Ver más información" desde el mapa (o desde el panel lateral): abre el
+// directorio de tarjetas cargadas en el menú que corresponde (propuestas o
+// zonas verdes e islas de calor) y resalta la tarjeta entre las demás.
+function abrirDirectorioEn(seccion, id) {
+  cerrarModalDetalle();
+  ModalFiltro.texto = '';
+  ModalFiltro.tipo = '';
+  ModalFiltro.zona = '';
+  Store.modalSeccion = seccion;
+  abrirModalTotal(seccion);
+  setTimeout(() => {
+    const tarjeta = document.querySelector(`#modalResultados [data-id="${CSS.escape(String(id))}"]`);
+    if (!tarjeta) return;
+    tarjeta.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    tarjeta.classList.add('pcard-resaltada');
+    setTimeout(() => tarjeta.classList.remove('pcard-resaltada'), 1700);
+  }, 150);
+}
+
 function abrirDetallePropuesta(id) {
   const p = Store.propuestas.find((x) => String(x.id) === String(id));
   if (!p) return;
-  cerrarModalTotal();
-  cerrarModalDetalle();
-  limpiarBuscador(); // por si había un filtro activo que la ocultaría
-  Store.resaltarAlRenderizar = { tipo: 'propuestas', id: p.id };
-  mostrarVista('propuestas');
-  cambiarTabLista('propuestas');
+  abrirDirectorioEn('propuestas', p.id);
 }
 
 function abrirDetalleFicha(tipo, id) {
   const lista = tipo === 'verde' ? ESPACIOS_VERDES : ISLAS_CALOR;
   const f = lista.find((x) => x.id === id);
   if (!f) return;
-  cerrarModalTotal();
-  cerrarModalDetalle();
-  Store.resaltarAlRenderizar = { tipo, id: f.id };
-  mostrarVista('propuestas');
-  cambiarTabLista(tipo);
+  abrirDirectorioEn('zonas', f.id);
 }
 
 // ── "Ver en el mapa" (desde una tarjeta o ficha de detalle) ──
