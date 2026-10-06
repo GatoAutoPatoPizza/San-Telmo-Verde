@@ -150,6 +150,64 @@ app.post('/api/auth/google', async (req, res) => {
   }
 });
 
+// ── Zonas del mapa (espacios verdes e islas de calor) ──
+// La tabla se crea sola y se carga con los datos iniciales si está vacía,
+// así no hace falta importar nada a mano en Railway.
+const ZONAS_INICIALES = [
+  ["verde-lezama", "verde", "Parque Lezama", "7.2 ha · El más grande del barrio", "El espacio verde más grande de San Telmo, con 7.2 hectáreas. Zona histórica con anfiteatro, el Museo Histórico Nacional y una gran variedad de árboles añosos.", "-34.6289", "-58.3697", "P"],
+  ["verde-dorrego", "verde", "Plazoleta Dorrego", "0.3 ha · Centro histórico", "Plaza chica en pleno centro histórico de San Telmo, rodeada de anticuarios. Sede de la feria de los domingos.", "-34.6212", "-58.3731", ""],
+  ["verde-humberto", "verde", "Plazoleta Calle Humberto", "Pequeña plaza de barrio", "Espacio verde chico sobre la calle Humberto Primo, de uso vecinal cotidiano.", "-34.6175", "-58.3720", ""],
+  ["calor-norte", "calor", "Isla de calor · Zona norte", "+3.2°C", "Zona con muy poca cobertura verde y alta densidad de construcción, lo que eleva la temperatura superficial respecto al resto del barrio.", "-34.6165", "-58.3775", ""],
+  ["calor-centro", "calor", "Isla de calor · Zona central", "+2.8°C", "Concentración de superficies de asfalto y hormigón sin arbolado que retienen calor durante el día y lo liberan de noche.", "-34.6245", "-58.3715", ""],
+  ["calor-este", "calor", "Isla de calor · Zona este", "+4.1°C", "La zona con mayor diferencia de temperatura registrada del barrio, cerca de la avenida Paseo Colón, con escasa vegetación.", "-34.6195", "-58.3675", ""],
+]; // [id, tipo, titulo, resumen, detalle, latitud, longitud, simbolo]
+
+let tablaZonasPromesa = null;
+function asegurarTablaZonas() {
+  if (!tablaZonasPromesa) {
+    tablaZonasPromesa = (async () => {
+      await dbQuery(`CREATE TABLE IF NOT EXISTS zonas_mapa (
+        id VARCHAR(50) NOT NULL PRIMARY KEY,
+        tipo ENUM('verde','calor') NOT NULL,
+        titulo VARCHAR(255) NOT NULL,
+        resumen VARCHAR(255) NOT NULL DEFAULT '',
+        detalle TEXT NOT NULL,
+        latitud DECIMAL(10,7) NOT NULL,
+        longitud DECIMAL(10,7) NOT NULL,
+        simbolo VARCHAR(5) NOT NULL DEFAULT '',
+        activo TINYINT(1) NOT NULL DEFAULT 1,
+        orden INT NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+      const [{ n }] = await dbQuery('SELECT COUNT(*) AS n FROM zonas_mapa');
+      if (Number(n) === 0) {
+        for (let i = 0; i < ZONAS_INICIALES.length; i += 1) {
+          await dbQuery(
+            'INSERT INTO zonas_mapa (id, tipo, titulo, resumen, detalle, latitud, longitud, simbolo, orden) VALUES (?,?,?,?,?,?,?,?,?)',
+            [...ZONAS_INICIALES[i], i]
+          );
+        }
+        console.log('zonas_mapa: se cargaron las fichas iniciales');
+      }
+    })().catch((e) => {
+      tablaZonasPromesa = null;
+      throw e;
+    });
+  }
+  return tablaZonasPromesa;
+}
+asegurarTablaZonas().catch((e) => console.warn('Zonas: no se pudo preparar la tabla zonas_mapa:', e.message));
+
+app.get('/api/zonas', async (req, res) => {
+  try {
+    await asegurarTablaZonas();
+    const rows = await dbQuery('SELECT id, tipo, titulo, resumen, detalle, latitud, longitud, simbolo FROM zonas_mapa WHERE activo = 1 ORDER BY orden, created_at');
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/propuestas', async (req, res) => {
   try {
     const rows = await dbQuery(

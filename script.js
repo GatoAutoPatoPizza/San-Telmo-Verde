@@ -9,6 +9,8 @@ const CENTRO_SAN_TELMO = [-34.6212, -58.3714];
    Centralizadas acá (con id) para poder: 1) dibujar el marcador,
    2) abrir su ficha de detalle al clickear el marcador, y
    3) ubicarlas en el mapa desde un botón "Ver en el mapa". */
+/* Estos datos son el RESPALDO: la fuente real es la tabla `zonas_mapa` (GET /api/zonas).
+   Si la API no responde se usan estos valores. */
 const ESPACIOS_VERDES = [
   { id: 'verde-lezama', lat: -34.6289, lng: -58.3697, simbolo: 'P', titulo: 'Parque Lezama', resumen: '7.2 ha · El más grande del barrio', detalle: 'El espacio verde más grande de San Telmo, con 7.2 hectáreas. Zona histórica con anfiteatro, el Museo Histórico Nacional y una gran variedad de árboles añosos.' },
   { id: 'verde-dorrego', lat: -34.6212, lng: -58.3731, simbolo: '', titulo: 'Plazoleta Dorrego', resumen: '0.3 ha · Centro histórico', detalle: 'Plaza chica en pleno centro histórico de San Telmo, rodeada de anticuarios. Sede de la feria de los domingos.' },
@@ -1642,8 +1644,9 @@ function renderResultadosModal() {
       html += `<div class="modal-section-title"${primero ? '' : ' style="margin-top:1.5rem"'}>${g.titulo}</div>`;
       primero = false;
       html += visibles.map((f) => `
-        <div class="panel-card" data-id="${escapeHtml(f.id)}" style="margin-bottom:0.5rem;cursor:pointer" onclick="abrirDetalleFicha('${g.tipo}', '${f.id}')">
-          <h4>${g.icono} ${escapeHtml(f.titulo)}</h4><p>${escapeHtml(f.resumen)}</p><span class="tag">ACTIVO</span>
+        <div class="panel-card ${g.tipo === 'calor' ? 'calor' : ''}" data-id="${escapeHtml(f.id)}" style="margin-bottom:0.5rem">
+          <h4>${g.icono} ${escapeHtml(f.titulo)}</h4><p>${escapeHtml(f.detalle || f.resumen)}</p><span class="tag">${escapeHtml(f.resumen)}</span>
+          <button type="button" class="pcard-ver-mapa" onclick="irAMapa(${f.lat}, ${f.lng}, '${g.tipo}', '${escapeHtml(f.id)}')">📍 Ver en el mapa</button>
         </div>`).join('');
     });
     if (mostrados === 0) html = sinResultados;
@@ -2143,12 +2146,35 @@ async function intentarCargarDesdeAPI() {
   } catch (_) {}
 }
 
+// Reemplaza (en el mismo array) las fichas fijas por las guardadas en la base.
+async function cargarZonasDesdeAPI() {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 5000);
+    const res = await fetch(`${API_BASE}/api/zonas`, { signal: ctrl.signal });
+    clearTimeout(t);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!Array.isArray(data) || !data.length) return;
+    const norm = (z) => ({
+      id: String(z.id), lat: Number(z.latitud), lng: Number(z.longitud),
+      simbolo: z.simbolo || '', titulo: z.titulo, resumen: z.resumen || '', detalle: z.detalle || '',
+    });
+    const validas = (z) => Number.isFinite(z.lat) && Number.isFinite(z.lng);
+    const verdes = data.filter((z) => z.tipo === 'verde').map(norm).filter(validas);
+    const calor = data.filter((z) => z.tipo === 'calor').map(norm).filter(validas);
+    ESPACIOS_VERDES.splice(0, ESPACIOS_VERDES.length, ...verdes);
+    ISLAS_CALOR.splice(0, ISLAS_CALOR.length, ...calor);
+  } catch (_) { /* sin API: quedan los datos de respaldo */ }
+}
+
 async function init() {
   activarNavegacion(); // primero el menú, así anda aunque falle el mapa
   renderIntegrantes();
   activarBuscador();
   activarBuscadorMapa();
   hydrateStore();
+  await cargarZonasDesdeAPI(); // fichas desde la base de datos (antes de dibujar los marcadores)
   inicializarMapa();
   if (Store.ubicacion) dibujarUsuarioEnMapa(Store.ubicacion.lat, Store.ubicacion.lng, Store.ubicacion.precision);
   animarBarrasAlEntrar();

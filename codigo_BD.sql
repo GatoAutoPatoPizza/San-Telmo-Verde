@@ -115,6 +115,36 @@ CREATE TABLE `votos_propuesta` (
   `fecha_voto` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+
+-- --------------------------------------------------------
+--
+-- Estructura de tabla para la tabla `zonas_mapa` (espacios verdes e islas de calor)
+-- (El servidor también la crea y la carga solo al arrancar; esto es por si preferís importarla a mano.)
+--
+
+CREATE TABLE IF NOT EXISTS `zonas_mapa` (
+  `id` varchar(50) NOT NULL,
+  `tipo` enum('verde','calor') NOT NULL,
+  `titulo` varchar(255) NOT NULL,
+  `resumen` varchar(255) NOT NULL DEFAULT '',
+  `detalle` text NOT NULL,
+  `latitud` decimal(10,7) NOT NULL,
+  `longitud` decimal(10,7) NOT NULL,
+  `simbolo` varchar(5) NOT NULL DEFAULT '',
+  `activo` tinyint(1) NOT NULL DEFAULT 1,
+  `orden` int(11) NOT NULL DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO `zonas_mapa` (`id`, `tipo`, `titulo`, `resumen`, `detalle`, `latitud`, `longitud`, `simbolo`) VALUES
+  ('verde-lezama', 'verde', 'Parque Lezama', '7.2 ha · El más grande del barrio', 'El espacio verde más grande de San Telmo, con 7.2 hectáreas. Zona histórica con anfiteatro, el Museo Histórico Nacional y una gran variedad de árboles añosos.', -34.6289, -58.3697, 'P'),
+  ('verde-dorrego', 'verde', 'Plazoleta Dorrego', '0.3 ha · Centro histórico', 'Plaza chica en pleno centro histórico de San Telmo, rodeada de anticuarios. Sede de la feria de los domingos.', -34.6212, -58.3731, ''),
+  ('verde-humberto', 'verde', 'Plazoleta Calle Humberto', 'Pequeña plaza de barrio', 'Espacio verde chico sobre la calle Humberto Primo, de uso vecinal cotidiano.', -34.6175, -58.3720, ''),
+  ('calor-norte', 'calor', 'Isla de calor · Zona norte', '+3.2°C', 'Zona con muy poca cobertura verde y alta densidad de construcción, lo que eleva la temperatura superficial respecto al resto del barrio.', -34.6165, -58.3775, ''),
+  ('calor-centro', 'calor', 'Isla de calor · Zona central', '+2.8°C', 'Concentración de superficies de asfalto y hormigón sin arbolado que retienen calor durante el día y lo liberan de noche.', -34.6245, -58.3715, ''),
+  ('calor-este', 'calor', 'Isla de calor · Zona este', '+4.1°C', 'La zona con mayor diferencia de temperatura registrada del barrio, cerca de la avenida Paseo Colón, con escasa vegetación.', -34.6195, -58.3675, '');
+
 --
 -- Índices para tablas volcadas
 --
