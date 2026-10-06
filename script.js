@@ -62,8 +62,7 @@ const Store = {
   mapa: null,
   capas: { verde: null, calor: null, prop: null },
   filtros: { verde: true, calor: true, prop: true },
-  tabLista: 'propuestas', // menú del encabezado: 'propuestas' | 'zonas'
-  subZona: 'todas', // dentro de 'zonas': 'todas' | 'verde' | 'calor'
+  tabLista: 'propuestas', // pestaña activa del menú: 'propuestas' | 'verde' | 'calor'
   resaltarAlRenderizar: null, // { tipo, id } — para "ver en la lista" desde el mapa
 };
 
@@ -1358,27 +1357,14 @@ function activarBuscador() {
 }
 
 function cambiarTabLista(tab) {
-  // Compatibilidad: 'verde' / 'calor' abren el menú de zonas con ese filtro
-  if (tab === 'verde' || tab === 'calor') { Store.subZona = tab; tab = 'zonas'; }
   Store.tabLista = tab;
   document.querySelectorAll('.lista-tab').forEach((btn) => {
-    const activo = btn.dataset.tab === tab;
-    btn.classList.toggle('active', activo);
-    btn.setAttribute('aria-selected', activo ? 'true' : 'false');
+    btn.classList.toggle('active', btn.dataset.tab === tab);
   });
   const controles = document.getElementById('propuestasControles');
   const label = document.getElementById('fichasLabel');
-  const filtros = document.getElementById('zonasFiltros');
   if (controles) controles.classList.toggle('hidden', tab !== 'propuestas');
   if (label) label.classList.toggle('hidden', tab === 'propuestas');
-  if (filtros) filtros.classList.toggle('hidden', tab !== 'zonas');
-  document.querySelectorAll('.zona-chip').forEach((c) => c.classList.toggle('active', c.dataset.sub === Store.subZona));
-  renderListaPropuestas();
-}
-
-function cambiarSubZona(sub) {
-  Store.subZona = sub;
-  document.querySelectorAll('.zona-chip').forEach((c) => c.classList.toggle('active', c.dataset.sub === sub));
   renderListaPropuestas();
 }
 
@@ -1386,8 +1372,6 @@ function actualizarContadoresTabs() {
   const cp = document.getElementById('contadorTabProp');
   const cv = document.getElementById('contadorTabVerde');
   const cc = document.getElementById('contadorTabCalor');
-  const cz = document.getElementById('contadorTabZonas');
-  if (cz) cz.textContent = String(ESPACIOS_VERDES.length + ISLAS_CALOR.length);
   if (cp) cp.textContent = String(select.propuestasActivas().length);
   if (cv) cv.textContent = String(ESPACIOS_VERDES.length);
   if (cc) cc.textContent = String(ISLAS_CALOR.length);
@@ -1404,22 +1388,20 @@ function resaltarTarjetaEnLista(id) {
   setTimeout(() => tarjeta.classList.remove('pcard-resaltada'), 1700);
 }
 
-function renderListaFichas() {
+function renderListaFichas(tipo) {
   const lista = document.getElementById('propuestasList');
   const label = document.getElementById('fichasLabel');
   if (!lista) return;
-  const sub = Store.subZona || 'todas';
-  const items = [];
-  if (sub !== 'calor') ESPACIOS_VERDES.forEach((f) => items.push({ f, tipo: 'verde' }));
-  if (sub !== 'verde') ISLAS_CALOR.forEach((f) => items.push({ f, tipo: 'calor' }));
+  const datos = tipo === 'verde' ? ESPACIOS_VERDES : ISLAS_CALOR;
+  const icono = tipo === 'verde' ? '🌳' : '🌡️';
   if (label) {
-    label.textContent = sub === 'verde' ? `Espacios verdes existentes · ${items.length} registrados`
-      : sub === 'calor' ? `Islas de calor relevadas · ${items.length} registradas`
-      : `Zonas verdes e islas de calor · ${items.length} fichas`;
+    label.textContent = tipo === 'verde'
+      ? `Espacios verdes existentes · ${datos.length} registrados`
+      : `Islas de calor relevadas · ${datos.length} registradas`;
   }
-  lista.innerHTML = items.map(({ f, tipo }) => `
+  lista.innerHTML = datos.map((f) => `
     <div class="propuesta-card ficha-card panel-card ${tipo === 'calor' ? 'calor' : ''}" data-id="${escapeHtml(f.id)}">
-      <h4>${tipo === 'verde' ? '🌳' : '🌡️'} ${escapeHtml(f.titulo)}</h4>
+      <h4>${icono} ${escapeHtml(f.titulo)}</h4>
       <p>${escapeHtml(f.detalle)}</p>
       <span class="tag">${escapeHtml(f.resumen)}</span>
       <button type="button" class="pcard-ver-mapa" onclick="irAMapa(${f.lat}, ${f.lng}, '${tipo}', '${escapeHtml(f.id)}')">📍 Ver en el mapa</button>
@@ -1429,9 +1411,9 @@ function renderListaFichas() {
 function renderListaPropuestas() {
   actualizarContadoresTabs();
   const tab = Store.tabLista || 'propuestas';
-  if (tab === 'zonas') {
-    renderListaFichas();
-    if (Store.resaltarAlRenderizar && Store.resaltarAlRenderizar.tipo !== 'propuestas') {
+  if (tab === 'verde' || tab === 'calor') {
+    renderListaFichas(tab);
+    if (Store.resaltarAlRenderizar && Store.resaltarAlRenderizar.tipo === tab) {
       const { id } = Store.resaltarAlRenderizar;
       Store.resaltarAlRenderizar = null;
       setTimeout(() => resaltarTarjetaEnLista(id), 150);
@@ -1555,30 +1537,41 @@ async function enviarPropuesta() {
   }
 }
 
-function abrirModalTotal() {
+function abrirModalTotal(seccion) {
   const modal = document.getElementById('modalTotal');
   const content = document.getElementById('modalBodyContent');
   if (!modal || !content) return;
-  let html = '<div class="modal-section-title">Espacios verdes existentes</div>';
-  html += ESPACIOS_VERDES.map((f) => `
-    <div class="panel-card" style="margin-bottom:0.5rem;cursor:pointer" onclick="abrirDetalleFicha('verde', '${f.id}')">
-      <h4>🌳 ${escapeHtml(f.titulo)}</h4><p>${escapeHtml(f.resumen)}</p><span class="tag">ACTIVO</span>
-    </div>`).join('');
-  html += '<div class="modal-section-title" style="margin-top:1.5rem">Islas de calor</div>';
-  html += ISLAS_CALOR.map((f) => `
-    <div class="panel-card" style="margin-bottom:0.5rem;cursor:pointer" onclick="abrirDetalleFicha('calor', '${f.id}')">
-      <h4>🌡️ ${escapeHtml(f.titulo)}</h4><p>${escapeHtml(f.resumen)}</p><span class="tag">ACTIVO</span>
-    </div>`).join('');
-  html += '<div class="modal-section-title" style="margin-top:1.5rem">Propuestas ciudadanas</div>';
+  if (seccion) Store.modalSeccion = seccion;
+  const sec = Store.modalSeccion || 'propuestas';
   const activas = select.propuestasActivas();
-  if (activas.length === 0) {
-    html += '<p style="font-size:0.85rem;color:var(--pizarra-claro)">No hay propuestas registradas todavía.</p>';
+  let html = `
+    <div class="lista-header" role="tablist" aria-label="Menú del directorio">
+      <button type="button" class="lista-tab ${sec === 'propuestas' ? 'active' : ''}" role="tab" aria-selected="${sec === 'propuestas'}" onclick="abrirModalTotal('propuestas')">📋 Solo propuestas <span>${activas.length}</span></button>
+      <button type="button" class="lista-tab ${sec === 'zonas' ? 'active' : ''}" role="tab" aria-selected="${sec === 'zonas'}" onclick="abrirModalTotal('zonas')">🌳🌡️ Zonas verdes y olas de calor <span>${ESPACIOS_VERDES.length + ISLAS_CALOR.length}</span></button>
+    </div>`;
+  if (sec === 'propuestas') {
+    html += '<div class="modal-section-title">Propuestas ciudadanas</div>';
+    if (activas.length === 0) {
+      html += '<p style="font-size:0.85rem;color:var(--pizarra-claro)">No hay propuestas registradas todavía.</p>';
+    } else {
+      activas.forEach((p) => {
+        html += `<div style="margin-bottom:0.5rem">${tarjetaPropuestaHTML(p)}</div>`;
+      });
+    }
   } else {
-    activas.forEach((p) => {
-      html += `<div style="margin-bottom:0.5rem">${tarjetaPropuestaHTML(p)}</div>`;
-    });
+    html += '<div class="modal-section-title">Espacios verdes existentes</div>';
+    html += ESPACIOS_VERDES.map((f) => `
+      <div class="panel-card" style="margin-bottom:0.5rem;cursor:pointer" onclick="abrirDetalleFicha('verde', '${f.id}')">
+        <h4>🌳 ${escapeHtml(f.titulo)}</h4><p>${escapeHtml(f.resumen)}</p><span class="tag">ACTIVO</span>
+      </div>`).join('');
+    html += '<div class="modal-section-title" style="margin-top:1.5rem">Islas de calor</div>';
+    html += ISLAS_CALOR.map((f) => `
+      <div class="panel-card" style="margin-bottom:0.5rem;cursor:pointer" onclick="abrirDetalleFicha('calor', '${f.id}')">
+        <h4>🌡️ ${escapeHtml(f.titulo)}</h4><p>${escapeHtml(f.resumen)}</p><span class="tag">ACTIVO</span>
+      </div>`).join('');
   }
   content.innerHTML = html;
+  content.scrollTop = 0;
   modal.classList.add('active');
 }
 
