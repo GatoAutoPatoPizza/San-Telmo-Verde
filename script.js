@@ -1537,42 +1537,120 @@ async function enviarPropuesta() {
   }
 }
 
+const ModalFiltro = { texto: '', tipo: '', zona: '' };
+
 function abrirModalTotal(seccion) {
   const modal = document.getElementById('modalTotal');
   const content = document.getElementById('modalBodyContent');
   if (!modal || !content) return;
+  if (seccion && seccion !== Store.modalSeccion) {
+    // al cambiar de menú se limpia el filtro de tipo (cada menú tiene el suyo)
+    ModalFiltro.tipo = '';
+    ModalFiltro.zona = '';
+  }
   if (seccion) Store.modalSeccion = seccion;
   const sec = Store.modalSeccion || 'propuestas';
   const activas = select.propuestasActivas();
-  let html = `
+  const opciones = sec === 'propuestas'
+    ? `<option value="">Todos los tipos</option>
+       <option value="Plaza de bolsillo">🌳 Plaza de bolsillo</option>
+       <option value="Techo verde">🌿 Techo verde</option>
+       <option value="Jardín comunitario">🌻 Jardín comunitario</option>
+       <option value="Arbolado urbano">🌲 Arbolado urbano</option>`
+    : `<option value="">Todas las zonas</option>
+       <option value="verde">🌳 Espacios verdes</option>
+       <option value="calor">🌡️ Islas de calor</option>`;
+  const placeholder = sec === 'propuestas'
+    ? 'Buscar por título, dirección, descripción o autor…'
+    : 'Buscar espacios verdes e islas de calor…';
+  content.innerHTML = `
     <div class="lista-header" role="tablist" aria-label="Menú del directorio">
       <button type="button" class="lista-tab ${sec === 'propuestas' ? 'active' : ''}" role="tab" aria-selected="${sec === 'propuestas'}" onclick="abrirModalTotal('propuestas')">📋 Solo propuestas <span>${activas.length}</span></button>
-      <button type="button" class="lista-tab ${sec === 'zonas' ? 'active' : ''}" role="tab" aria-selected="${sec === 'zonas'}" onclick="abrirModalTotal('zonas')">🌳🌡️ Zonas verdes y olas de calor <span>${ESPACIOS_VERDES.length + ISLAS_CALOR.length}</span></button>
-    </div>`;
-  if (sec === 'propuestas') {
-    html += '<div class="modal-section-title">Propuestas ciudadanas</div>';
-    if (activas.length === 0) {
-      html += '<p style="font-size:0.85rem;color:var(--pizarra-claro)">No hay propuestas registradas todavía.</p>';
-    } else {
-      activas.forEach((p) => {
-        html += `<div style="margin-bottom:0.5rem">${tarjetaPropuestaHTML(p)}</div>`;
-      });
-    }
-  } else {
-    html += '<div class="modal-section-title">Espacios verdes existentes</div>';
-    html += ESPACIOS_VERDES.map((f) => `
-      <div class="panel-card" style="margin-bottom:0.5rem;cursor:pointer" onclick="abrirDetalleFicha('verde', '${f.id}')">
-        <h4>🌳 ${escapeHtml(f.titulo)}</h4><p>${escapeHtml(f.resumen)}</p><span class="tag">ACTIVO</span>
-      </div>`).join('');
-    html += '<div class="modal-section-title" style="margin-top:1.5rem">Islas de calor</div>';
-    html += ISLAS_CALOR.map((f) => `
-      <div class="panel-card" style="margin-bottom:0.5rem;cursor:pointer" onclick="abrirDetalleFicha('calor', '${f.id}')">
-        <h4>🌡️ ${escapeHtml(f.titulo)}</h4><p>${escapeHtml(f.resumen)}</p><span class="tag">ACTIVO</span>
-      </div>`).join('');
-  }
-  content.innerHTML = html;
+      <button type="button" class="lista-tab ${sec === 'zonas' ? 'active' : ''}" role="tab" aria-selected="${sec === 'zonas'}" onclick="abrirModalTotal('zonas')">🌳🌡️ Zonas verdes e islas de calor <span>${ESPACIOS_VERDES.length + ISLAS_CALOR.length}</span></button>
+    </div>
+    <div class="buscador-prop" role="search">
+      <div class="buscador-input-wrap">
+        <span class="buscador-ico" aria-hidden="true">🔍</span>
+        <input type="text" id="modalBuscador" placeholder="${placeholder}" aria-label="Buscar en el directorio" autocomplete="off">
+        <button type="button" id="modalLimpiar" class="buscador-limpiar hidden" aria-label="Borrar búsqueda">×</button>
+      </div>
+      <select id="modalTipo" aria-label="Filtrar">${opciones}</select>
+    </div>
+    <div id="modalResumen" class="buscador-resumen" aria-live="polite"></div>
+    <div id="modalResultados"></div>`;
+
+  const inp = document.getElementById('modalBuscador');
+  const sel = document.getElementById('modalTipo');
+  const btn = document.getElementById('modalLimpiar');
+  const valorSel = sec === 'propuestas' ? ModalFiltro.tipo : ModalFiltro.zona;
+  inp.value = ModalFiltro.texto;
+  sel.value = valorSel;
+  btn.classList.toggle('hidden', !inp.value);
+  inp.addEventListener('input', () => {
+    ModalFiltro.texto = inp.value;
+    btn.classList.toggle('hidden', !inp.value);
+    renderResultadosModal();
+  });
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Escape') { inp.value = ''; inp.dispatchEvent(new Event('input')); } });
+  sel.addEventListener('change', () => {
+    if (sec === 'propuestas') ModalFiltro.tipo = sel.value; else ModalFiltro.zona = sel.value;
+    renderResultadosModal();
+  });
+  btn.addEventListener('click', () => { inp.value = ''; inp.dispatchEvent(new Event('input')); inp.focus(); });
+
+  renderResultadosModal();
   content.scrollTop = 0;
   modal.classList.add('active');
+}
+
+function renderResultadosModal() {
+  const cont = document.getElementById('modalResultados');
+  const resumen = document.getElementById('modalResumen');
+  if (!cont) return;
+  const sec = Store.modalSeccion || 'propuestas';
+  const terminos = normalizarBusqueda(ModalFiltro.texto).split(/\s+/).filter(Boolean);
+  const coincide = (txt) => terminos.every((t) => normalizarBusqueda(txt).includes(t));
+  const sinResultados = '<p style="font-size:0.85rem;color:var(--pizarra-claro)">No encontramos resultados. Probá con otras palabras o quitá los filtros.</p>';
+  let html = '';
+  let total = 0;
+  let mostrados = 0;
+
+  if (sec === 'propuestas') {
+    const activas = select.propuestasActivas();
+    total = activas.length;
+    const visibles = activas.filter((p) => {
+      if (ModalFiltro.tipo && p.tipo !== ModalFiltro.tipo) return false;
+      return coincide([p.titulo, p.direccion, p.descripcion, p.nombre_usuario, p.tipo, p.estado].join(' '));
+    });
+    mostrados = visibles.length;
+    html += '<div class="modal-section-title">Propuestas ciudadanas</div>';
+    if (total === 0) html += '<p style="font-size:0.85rem;color:var(--pizarra-claro)">No hay propuestas registradas todavía.</p>';
+    else if (mostrados === 0) html += sinResultados;
+    else visibles.forEach((p) => { html += `<div style="margin-bottom:0.5rem">${tarjetaPropuestaHTML(p)}</div>`; });
+  } else {
+    const grupos = [
+      { tipo: 'verde', titulo: 'Espacios verdes existentes', icono: '🌳', datos: ESPACIOS_VERDES },
+      { tipo: 'calor', titulo: 'Islas de calor', icono: '🌡️', datos: ISLAS_CALOR },
+    ];
+    total = ESPACIOS_VERDES.length + ISLAS_CALOR.length;
+    let primero = true;
+    grupos.forEach((g) => {
+      if (ModalFiltro.zona && ModalFiltro.zona !== g.tipo) return;
+      const visibles = g.datos.filter((f) => coincide([f.titulo, f.resumen, f.detalle].join(' ')));
+      if (visibles.length === 0) return;
+      mostrados += visibles.length;
+      html += `<div class="modal-section-title"${primero ? '' : ' style="margin-top:1.5rem"'}>${g.titulo}</div>`;
+      primero = false;
+      html += visibles.map((f) => `
+        <div class="panel-card" style="margin-bottom:0.5rem;cursor:pointer" onclick="abrirDetalleFicha('${g.tipo}', '${f.id}')">
+          <h4>${g.icono} ${escapeHtml(f.titulo)}</h4><p>${escapeHtml(f.resumen)}</p><span class="tag">ACTIVO</span>
+        </div>`).join('');
+    });
+    if (mostrados === 0) html = sinResultados;
+  }
+  const filtrando = Boolean(terminos.length || (sec === 'propuestas' ? ModalFiltro.tipo : ModalFiltro.zona));
+  if (resumen) resumen.textContent = filtrando ? `Mostrando ${mostrados} de ${total}` : '';
+  cont.innerHTML = html;
 }
 
 function cerrarModalTotal() {
