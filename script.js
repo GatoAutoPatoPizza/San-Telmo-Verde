@@ -45,12 +45,15 @@ const KEYS = {
   usuario: 'stv_usuario',
   votos: 'stv_votos',
   denuncias: 'stv_denuncias', // { [userId]: { [propuestaId]: true } }
+  likesZonas: 'stv_likes_zonas', // { [userId]: { [zonaId]: true } }
 };
 
 const Store = {
   propuestas: [],
   usuario: null,
   votosUsuario: new Set(),
+  likesZonasUsuario: new Set(), // ids de zonas verdes que el usuario marcó con me gusta
+  modoUbicacionDestino: 'propuesta', // 'propuesta' | 'zona' (moderador cargando una zona)
   marcadores: {},
   marcadoresVerde: {},
   marcadoresCalor: {},
@@ -85,6 +88,7 @@ function hydrateStore() {
   Store.usuario = loadJSON(KEYS.usuario, null);
   Store.propuestas = loadJSON(KEYS.propuestas, []);
   syncVotosUsuarioFromStorage();
+  syncLikesZonasFromStorage();
 }
 
 function persistPropuestas() {
@@ -104,6 +108,24 @@ function syncVotosUsuarioFromStorage() {
   Object.keys(mine).forEach((id) => {
     if (mine[id]) Store.votosUsuario.add(String(id));
   });
+}
+
+function syncLikesZonasFromStorage() {
+  Store.likesZonasUsuario = new Set();
+  if (!Store.usuario) return;
+  const mine = loadJSON(KEYS.likesZonas, {})[Store.usuario.id] || {};
+  Object.keys(mine).forEach((id) => { if (mine[id]) Store.likesZonasUsuario.add(String(id)); });
+}
+
+function persistLikeZona(zonaId, meGusta) {
+  if (!Store.usuario) return;
+  const all = loadJSON(KEYS.likesZonas, {});
+  if (!all[Store.usuario.id]) all[Store.usuario.id] = {};
+  if (meGusta) all[Store.usuario.id][String(zonaId)] = true;
+  else delete all[Store.usuario.id][String(zonaId)];
+  saveJSON(KEYS.likesZonas, all);
+  if (meGusta) Store.likesZonasUsuario.add(String(zonaId));
+  else Store.likesZonasUsuario.delete(String(zonaId));
 }
 
 function persistVoto(propuestaId) {
@@ -213,6 +235,201 @@ function cambiarTabMod(btn) {
   document.querySelectorAll('.mod-tab').forEach((b) => b.classList.toggle('active', b === btn));
   document.getElementById('modTabDenuncias')?.classList.toggle('hidden', tab !== 'denuncias');
   document.getElementById('modTabPropuestas')?.classList.toggle('hidden', tab !== 'propuestas');
+  document.getElementById('modTabZonas')?.classList.toggle('hidden', tab !== 'zonas');
+  if (tab === 'zonas') renderModZonas();
+}
+
+// ── Moderación: agregar / eliminar zonas (espacios verdes e islas de calor) ──
+
+function renderModZonas() {
+  const cont = document.getElementById('modZonasList');
+  if (!cont) return;
+  const todas = [
+    ...ESPACIOS_VERDES.map((f) => ({ ...f, tipo: 'verde' })),
+    ...ISLAS_CALOR.map((f) => ({ ...f, tipo: 'calor' })),
+  ];
+  if (!todas.length) {
+    cont.innerHTML = '<div class="mod-empty">Todavía no hay zonas cargadas.</div>';
+    return;
+  }
+  cont.innerHTML = todas.map((f) => `
+    <div class="mod-card">
+      <h4>${f.tipo === 'verde' ? '🌳' : '🌡️'} ${escapeHtml(f.titulo)}</h4>
+      <div class="mod-meta">${escapeHtml(f.resumen)}${f.tipo === 'verde' ? ` · 💚 ${f.likes || 0}` : ''}</div>
+      <div class="mod-actions">
+        <button type="button" class="mod-btn" onclick="verZonaDesdeMod('${f.tipo}', '${escapeHtml(f.id)}')">📍 Ver en el mapa</button>
+        <button type="button" class="mod-btn mod-btn-danger" onclick="eliminarZonaMod('${escapeHtml(f.id)}')">Eliminar</button>
+      </div>
+    </div>`).join('');
+}
+
+function verZonaDesdeMod(tipo, id) {
+  const f = (tipo === 'verde' ? ESPACIOS_VERDES : ISLAS_CALOR).find((x) => x.id === id);
+  if (!f) return;
+  cerrarModalModeracion();
+  irAMapa(f.lat, f.lng, tipo, f.id);
+}
+
+// Paso 1: "Marcar en el mapa" → cerramos el panel, entramos en modo ubicación
+// y esperamos el click del moderador sobre el mapa.
+function elegirUbicacionZonaMod() {
+  Store.modoUbicacionDestino = 'zona';
+  Store.modoUbicacion = true;
+  textoBannerUbicacion('📍 Hacé clic en el mapa para marcar la ubicación de la zona');
+  document.getElementById('modoUbicacionBanner')?.classList.remove('hidden');
+  document.getElementById('map')?.classList.add('cursor-crosshair');
+  cerrarModalModeracion();
+  mostrarVista('mapa');
+}
+
+async function guardarZonaMod() {
+  const titulo = document.getElementById('modZonaTitulo')?.value.trim();
+  const tipo = document.querySelector('input[name="modZonaTipo"]:checked')?.value;
+  const resumen = document.getElementById('modZonaResumen')?.value.trim();
+  const detalle = document.getElementById('modZonaDetalle')?.value.trim();
+  const lat = document.getElementById('modZonaLat')?.value;
+  const lng = document.getElementById('modZonaLng')?.value;
+  const error = document.getElementById('modZonaError');
+  const mostrarError = (msg) => { if (error) error.textContent = msg; };
+
+  if (!titulo) return mostrarError('Poné un nombre para la zona.');
+  if (!tipo) return mostrarError('Elegí si es un espacio verde o una isla de calor.');
+  if (!lat || !lng) return mostrarError('Marcá la ubicación en el mapa.');
+  mostrarError('');
+
+  try {
+    const res = await fetch(`${API_BASE}/api/mod/zonas`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: emailModerador(),
+        usuario_id: Store.usuario?.id,
+        google_id: Store.usuario?.google_id,
+        titulo, tipo, resumen, detalle,
+        latitud: Number(lat),
+        longitud: Number(lng),
+      }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return mostrarError(data.error || 'No se pudo guardar la zona.');
+    }
+  } catch (_) {
+    return mostrarError('No se pudo conectar con el servidor.');
+  }
+
+  limpiarFormZonaMod();
+  clearMarcadorTemporal();
+  await cargarZonasDesdeAPI();
+  renderAll();
+  renderModZonas();
+}
+
+function limpiarFormZonaMod() {
+  ['modZonaTitulo', 'modZonaResumen', 'modZonaDetalle', 'modZonaLat', 'modZonaLng'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const texto = document.getElementById('modZonaUbicacionTexto');
+  if (texto) {
+    texto.textContent = 'Sin ubicación marcada';
+    texto.classList.remove('marcada');
+  }
+}
+
+async function eliminarZonaMod(id) {
+  if (!confirm('¿Eliminar esta zona del mapa? También se borran sus me gusta. No se puede deshacer.')) return;
+  try {
+    const res = await fetch(`${API_BASE}/api/mod/zonas/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: emailModerador() }),
+    });
+    if (!res.ok) throw new Error('no autorizado');
+  } catch (_) {
+    alert('No se pudo eliminar la zona. ¿Tu email está en MODERADORES del servidor?');
+    return;
+  }
+  await cargarZonasDesdeAPI();
+  renderAll();
+  renderModZonas();
+}
+
+// ── Me gusta en zonas verdes ──
+// Toggle con actualización optimista y confirmación del servidor.
+async function darLikeZona(id) {
+  if (!select.isLoggedIn()) {
+    abrirModalLogin();
+    return;
+  }
+  const zid = String(id);
+  const zona = ESPACIOS_VERDES.find((f) => f.id === zid);
+  if (!zona) return;
+  const antes = { likes: zona.likes || 0, meGusta: select.diLikeZona(zid) };
+
+  zona.likes = Math.max(0, antes.likes + (antes.meGusta ? -1 : 1));
+  persistLikeZona(zid, !antes.meGusta);
+  refrescarLikesEnPantalla();
+
+  try {
+    const res = await fetch(`${API_BASE}/api/zonas/${encodeURIComponent(zid)}/like`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        usuario_id: Store.usuario.id,
+        email: Store.usuario.email,
+        google_id: Store.usuario.google_id,
+      }),
+    });
+    if (!res.ok) throw new Error(String(res.status));
+    const data = await res.json();
+    if (typeof data.likes === 'number') zona.likes = data.likes;
+    if (typeof data.meGusta === 'boolean') persistLikeZona(zid, data.meGusta);
+  } catch (_) {
+    // Si el servidor no confirmó, volvemos al estado anterior (no dejar un like "fantasma")
+    zona.likes = antes.likes;
+    persistLikeZona(zid, antes.meGusta);
+  }
+  refrescarLikesEnPantalla();
+}
+
+// Trae del servidor qué zonas le gustaron al usuario (funciona entre dispositivos)
+async function sincronizarLikesZonasConServidor() {
+  if (!Store.usuario) return;
+  try {
+    const q = new URLSearchParams({
+      usuario_id: Store.usuario.id || '',
+      email: Store.usuario.email || '',
+      google_id: Store.usuario.google_id || '',
+    });
+    const res = await fetch(`${API_BASE}/api/zonas/mis-likes?${q}`);
+    if (!res.ok) return;
+    const ids = await res.json();
+    if (!Array.isArray(ids)) return;
+    Store.likesZonasUsuario = new Set(ids.map(String));
+    const all = loadJSON(KEYS.likesZonas, {});
+    all[Store.usuario.id] = Object.fromEntries(ids.map((i) => [String(i), true]));
+    saveJSON(KEYS.likesZonas, all);
+    refrescarLikesEnPantalla();
+  } catch (_) {}
+}
+
+function botonLikeZonaHTML(f) {
+  const liked = select.diLikeZona(f.id);
+  return `<button type="button" class="like-btn ${liked ? 'liked' : ''}" onclick="darLikeZona('${escapeHtml(f.id)}')"
+    title="${liked ? 'Quitar me gusta' : 'Me gusta este espacio'}">${liked ? '💚' : '🤍'} <span>${f.likes || 0}</span></button>`;
+}
+
+// Redibuja todo lo que muestra likes sin cerrar el popup que esté abierto
+function refrescarLikesEnPantalla() {
+  ESPACIOS_VERDES.forEach((f) => {
+    const m = Store.marcadoresVerde[f.id];
+    if (m) m.setPopupContent(popupFichaHTML(f, 'verde'));
+  });
+  renderListaPropuestas();
+  renderPanelLateral();
+  if (document.getElementById('modalTotal')?.classList.contains('active')) renderResultadosModal();
+  if (document.getElementById('modalModeracion')?.classList.contains('active')) renderModZonas();
 }
 
 async function cargarDenunciasMod() {
@@ -682,11 +899,19 @@ function esPropuestaMia(p) {
 const select = {
   isLoggedIn: () => !!Store.usuario,
   yaVoto: (id) => Store.votosUsuario.has(String(id)),
+  diLikeZona: (id) => Store.likesZonasUsuario.has(String(id)),
   propuestaById: (id) => Store.propuestas.find((p) => String(p.id) === String(id)) || null,
   propuestasActivas: () => Store.propuestas.filter((p) => (p.estado || '') !== 'Archivada'),
   topPropuestas: (n = 3) =>
     [...select.propuestasActivas()].sort((a, b) => (b.votos || 0) - (a.votos || 0)).slice(0, n),
 };
+
+// Espacios verdes ordenados por "me gusta" (el más querido primero; empates mantienen el orden original)
+function verdesPorLikes() {
+  return ESPACIOS_VERDES.map((f, i) => ({ f, i }))
+    .sort((a, b) => (b.f.likes || 0) - (a.f.likes || 0) || a.i - b.i)
+    .map((x) => x.f);
+}
 
 function escapeHtml(str) {
   if (str == null) return '';
@@ -739,6 +964,8 @@ function setUsuario(usuario) {
   Store.usuario = usuario;
   persistUsuario();
   syncVotosUsuarioFromStorage();
+  syncLikesZonasFromStorage();
+  sincronizarLikesZonasConServidor();
   renderAuthUI();
   renderAll();
   refrescarEstadoBan();
@@ -1175,6 +1402,7 @@ function popupFichaHTML(f, tipo) {
   return `
     <strong>${escapeHtml(f.titulo)}</strong><br>
     <span style="font-size:0.75rem;color:#4A5568">${escapeHtml(f.resumen)}</span>
+    ${tipo === 'verde' ? `<div class="popup-like">${botonLikeZonaHTML(f)}</div>` : ''}
     <button type="button" class="popup-vermas-btn" onclick="abrirDetalleFicha('${tipo}', '${escapeHtml(f.id)}')">Ver más información →</button>
   `;
 }
@@ -1216,26 +1444,52 @@ function inicializarMapa() {
   Store.capas.calor = L.layerGroup().addTo(Store.mapa);
   Store.capas.prop = L.layerGroup().addTo(Store.mapa);
 
-  ESPACIOS_VERDES.forEach((f) => {
-    const marker = L.marker([f.lat, f.lng], { icon: crearIcono('verde', f.simbolo || '') })
-      .bindPopup(popupFichaHTML(f, 'verde'))
-      .addTo(Store.capas.verde);
-    Store.marcadoresVerde[f.id] = marker;
-  });
-
-  ISLAS_CALOR.forEach((f) => {
-    const marker = L.marker([f.lat, f.lng], { icon: crearIcono('calor', '!') })
-      .bindPopup(popupFichaHTML(f, 'calor'))
-      .addTo(Store.capas.calor);
-    Store.marcadoresCalor[f.id] = marker;
-  });
+  syncMarcadoresZonasDesdeStore(); // (las zonas ya vienen cargadas desde init)
 
   Store.mapa.on('click', onMapClick);
+}
+
+function syncMarcadoresZonasDesdeStore() {
+  Object.values(Store.marcadoresVerde).forEach((m) => { try { Store.capas.verde?.removeLayer(m); } catch (_) {} });
+  Object.values(Store.marcadoresCalor).forEach((m) => { try { Store.capas.calor?.removeLayer(m); } catch (_) {} });
+  Store.marcadoresVerde = {};
+  Store.marcadoresCalor = {};
+  if (!Store.capas.verde || !Store.capas.calor) return;
+
+  ESPACIOS_VERDES.forEach((f) => {
+    Store.marcadoresVerde[f.id] = L.marker([f.lat, f.lng], { icon: crearIcono('verde', f.simbolo || '') })
+      .bindPopup(popupFichaHTML(f, 'verde'))
+      .addTo(Store.capas.verde);
+  });
+  ISLAS_CALOR.forEach((f) => {
+    Store.marcadoresCalor[f.id] = L.marker([f.lat, f.lng], { icon: crearIcono('calor', '!') })
+      .bindPopup(popupFichaHTML(f, 'calor'))
+      .addTo(Store.capas.calor);
+  });
 }
 
 function onMapClick(e) {
   if (!Store.modoUbicacion || !Store.mapa) return;
   const { lat, lng } = e.latlng;
+  const destino = Store.modoUbicacionDestino || 'propuesta';
+  clearMarcadorTemporal();
+  Store.marcadorTemporal = L.marker([lat, lng], { icon: crearIcono('prop', '★') }).addTo(Store.mapa);
+  cancelarModoUbicacion();
+
+  if (destino === 'zona') {
+    // El moderador estaba cargando una zona: volvemos a su panel con la ubicación lista.
+    document.getElementById('modZonaLat').value = lat.toFixed(6);
+    document.getElementById('modZonaLng').value = lng.toFixed(6);
+    const textoMod = document.getElementById('modZonaUbicacionTexto');
+    if (textoMod) {
+      textoMod.textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+      textoMod.classList.add('marcada');
+    }
+    abrirModalModeracion();
+    cambiarTabMod(document.querySelector('.mod-tab[data-tab="zonas"]'));
+    return;
+  }
+
   document.getElementById('inputLat').value = lat.toFixed(6);
   document.getElementById('inputLng').value = lng.toFixed(6);
   const texto = document.getElementById('ubicacionTexto');
@@ -1243,9 +1497,6 @@ function onMapClick(e) {
     texto.textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
     texto.classList.add('marcada');
   }
-  clearMarcadorTemporal();
-  Store.marcadorTemporal = L.marker([lat, lng], { icon: crearIcono('prop', '★') }).addTo(Store.mapa);
-  cancelarModoUbicacion();
   mostrarVista('propuestas'); // volvemos al formulario con la ubicación ya cargada
 }
 
@@ -1260,8 +1511,15 @@ function activarModoUbicacion() {
   mostrarVista('mapa');
 }
 
+function textoBannerUbicacion(t) {
+  const el = document.getElementById('modoUbicacionTexto');
+  if (el) el.textContent = t;
+}
+
 function cancelarModoUbicacion() {
   Store.modoUbicacion = false;
+  Store.modoUbicacionDestino = 'propuesta';
+  textoBannerUbicacion('📍 Hacé clic en el mapa para marcar la ubicación de tu propuesta');
   document.getElementById('modoUbicacionBanner')?.classList.add('hidden');
   document.getElementById('map')?.classList.remove('cursor-crosshair');
 }
@@ -1394,11 +1652,11 @@ function renderListaFichas(tipo) {
   const lista = document.getElementById('propuestasList');
   const label = document.getElementById('fichasLabel');
   if (!lista) return;
-  const datos = tipo === 'verde' ? ESPACIOS_VERDES : ISLAS_CALOR;
+  const datos = tipo === 'verde' ? verdesPorLikes() : ISLAS_CALOR;
   const icono = tipo === 'verde' ? '🌳' : '🌡️';
   if (label) {
     label.textContent = tipo === 'verde'
-      ? `Espacios verdes existentes · ${datos.length} registrados`
+      ? `Espacios verdes existentes · ${datos.length} registrados · ordenados por me gusta`
       : `Islas de calor relevadas · ${datos.length} registradas`;
   }
   lista.innerHTML = datos.map((f) => `
@@ -1406,8 +1664,12 @@ function renderListaFichas(tipo) {
       <h4>${icono} ${escapeHtml(f.titulo)}</h4>
       <p>${escapeHtml(f.detalle)}</p>
       <span class="tag">${escapeHtml(f.resumen)}</span>
-      <button type="button" class="pcard-ver-mapa" onclick="irAMapa(${f.lat}, ${f.lng}, '${tipo}', '${escapeHtml(f.id)}')">📍 Ver en el mapa</button>
+      <div class="ficha-footer">
+        <button type="button" class="pcard-ver-mapa" onclick="irAMapa(${f.lat}, ${f.lng}, '${tipo}', '${escapeHtml(f.id)}')">📍 Ver en el mapa</button>
+        ${tipo === 'verde' ? botonLikeZonaHTML(f) : ''}
+      </div>
     </div>`).join('');
+  if (!datos.length) lista.innerHTML = '<p style="font-size:0.85rem;color:var(--pizarra-claro)">Todavía no hay zonas cargadas.</p>';
 }
 
 function renderListaPropuestas() {
@@ -1468,11 +1730,11 @@ function renderListaPropuestas() {
 function renderPanelLateral() {
   const panel = document.getElementById('mapaPanel');
   if (!panel) return;
-  let html = ESPACIOS_VERDES.slice(0, 2).map((f) => `
+  let html = verdesPorLikes().slice(0, 2).map((f) => `
     <div class="panel-card" onclick="abrirDetalleFicha('verde', '${f.id}')" style="cursor:pointer">
       <h4>🌳 ${escapeHtml(f.titulo)}</h4>
       <p>${escapeHtml(f.detalle)}</p>
-      <span class="tag">ACTIVO · ${escapeHtml(f.resumen)}</span>
+      <span class="tag">ACTIVO · ${escapeHtml(f.resumen)} · 💚 ${f.likes || 0}</span>
     </div>`).join('');
   const top = select.topPropuestas(3);
   if (top.length === 0) {
@@ -1501,6 +1763,7 @@ function renderPanelLateral() {
 function renderAll() {
   renderListaPropuestas();
   renderPanelLateral();
+  syncMarcadoresZonasDesdeStore();
   syncMarcadoresDesdeStore();
 }
 
@@ -1631,7 +1894,7 @@ function renderResultadosModal() {
     else visibles.forEach((p) => { html += `<div style="margin-bottom:0.5rem">${tarjetaPropuestaHTML(p)}</div>`; });
   } else {
     const grupos = [
-      { tipo: 'verde', titulo: 'Espacios verdes existentes', icono: '🌳', datos: ESPACIOS_VERDES },
+      { tipo: 'verde', titulo: 'Espacios verdes existentes', icono: '🌳', datos: verdesPorLikes() },
       { tipo: 'calor', titulo: 'Islas de calor', icono: '🌡️', datos: ISLAS_CALOR },
     ];
     total = ESPACIOS_VERDES.length + ISLAS_CALOR.length;
@@ -1646,7 +1909,10 @@ function renderResultadosModal() {
       html += visibles.map((f) => `
         <div class="panel-card ${g.tipo === 'calor' ? 'calor' : ''}" data-id="${escapeHtml(f.id)}" style="margin-bottom:0.5rem">
           <h4>${g.icono} ${escapeHtml(f.titulo)}</h4><p>${escapeHtml(f.detalle || f.resumen)}</p><span class="tag">${escapeHtml(f.resumen)}</span>
-          <button type="button" class="pcard-ver-mapa" onclick="irAMapa(${f.lat}, ${f.lng}, '${g.tipo}', '${escapeHtml(f.id)}')">📍 Ver en el mapa</button>
+          <div class="ficha-footer">
+            <button type="button" class="pcard-ver-mapa" onclick="irAMapa(${f.lat}, ${f.lng}, '${g.tipo}', '${escapeHtml(f.id)}')">📍 Ver en el mapa</button>
+            ${g.tipo === 'verde' ? botonLikeZonaHTML(f) : ''}
+          </div>
         </div>`).join('');
     });
     if (mostrados === 0) html = sinResultados;
@@ -2155,10 +2421,11 @@ async function cargarZonasDesdeAPI() {
     clearTimeout(t);
     if (!res.ok) return;
     const data = await res.json();
-    if (!Array.isArray(data) || !data.length) return;
+    if (!Array.isArray(data)) return; // (una lista vacía es válida: el moderador pudo borrar todo)
     const norm = (z) => ({
       id: String(z.id), lat: Number(z.latitud), lng: Number(z.longitud),
       simbolo: z.simbolo || '', titulo: z.titulo, resumen: z.resumen || '', detalle: z.detalle || '',
+      likes: Number(z.likes) || 0,
     });
     const validas = (z) => Number.isFinite(z.lat) && Number.isFinite(z.lng);
     const verdes = data.filter((z) => z.tipo === 'verde').map(norm).filter(validas);
@@ -2176,6 +2443,7 @@ async function init() {
   hydrateStore();
   await cargarZonasDesdeAPI(); // fichas desde la base de datos (antes de dibujar los marcadores)
   inicializarMapa();
+  sincronizarLikesZonasConServidor();
   if (Store.ubicacion) dibujarUsuarioEnMapa(Store.ubicacion.lat, Store.ubicacion.lng, Store.ubicacion.precision);
   animarBarrasAlEntrar();
   document.getElementById('modalLogin')?.addEventListener('click', (e) => {

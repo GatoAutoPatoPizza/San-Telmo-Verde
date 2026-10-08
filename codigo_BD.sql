@@ -133,8 +133,23 @@ CREATE TABLE IF NOT EXISTS `zonas_mapa` (
   `simbolo` varchar(5) NOT NULL DEFAULT '',
   `activo` tinyint(1) NOT NULL DEFAULT 1,
   `orden` int(11) NOT NULL DEFAULT 0,
+  `likes` int(11) NOT NULL DEFAULT 0,
+  `creado_por` int(11) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- "Me gusta" de la comunidad a las zonas verdes (un like por usuario y zona).
+-- Si zonas_mapa ya existía sin las columnas `likes` / `creado_por`, el servidor
+-- las agrega solo al arrancar; no hace falta tocar nada a mano.
+CREATE TABLE IF NOT EXISTS `likes_zona` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `zona_id` varchar(50) NOT NULL,
+  `usuario_id` int(11) NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `like_unico` (`zona_id`,`usuario_id`),
+  KEY `usuario_id` (`usuario_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT IGNORE INTO `zonas_mapa` (`id`, `tipo`, `titulo`, `resumen`, `detalle`, `latitud`, `longitud`, `simbolo`) VALUES

@@ -1420,3 +1420,33 @@ main .vista:not(#inicio) { min-height: 75vh; }
 @media (max-width: 560px) {
   #modalTotal .modal-box { margin-top: 60px; max-height: calc(100vh - 80px); }
 }
+
+/* ============================================
+   ZONAS DEL MAPA: me gusta + formulario de moderación
+============================================ */
+.ficha-footer { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap; }
+.ficha-footer .pcard-ver-mapa { margin-top: 0; }
+.popup-like { margin-top: 0.4rem; }
+.like-btn {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  background: rgba(0,0,0,0.05); border: none; border-radius: 99px;
+  padding: 0.3rem 0.7rem; font-size: 0.82rem; font-weight: 600;
+  color: var(--pizarra); cursor: pointer; transition: background 0.15s, transform 0.1s;
+}
+.like-btn:hover { background: rgba(0,0,0,0.1); }
+.like-btn:active { transform: scale(0.94); }
+.like-btn.liked { background: rgba(116, 198, 157, 0.2); color: var(--verde-oscuro); }
+
+.mod-zona-form { display: flex; flex-direction: column; gap: 0.6rem; }
+.mod-zona-form input[type="text"], .mod-zona-form textarea {
+  width: 100%; padding: 0.55rem 0.7rem; font-family: inherit; font-size: 0.85rem;
+  border: 1px solid var(--crema-oscura); border-radius: 6px; background: #fff; color: var(--pizarra);
+}
+.mod-zona-form textarea { resize: vertical; }
+.mod-zona-tipos { display: flex; gap: 1.25rem; font-size: 0.85rem; flex-wrap: wrap; }
+.mod-zona-tipos label { display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; }
+.mod-zona-ubicacion { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.mod-zona-ubicacion-texto { font-size: 0.8rem; color: var(--pizarra-claro); }
+.mod-zona-ubicacion-texto.marcada { color: var(--verde-medio); font-weight: 600; }
+.mod-zona-error { font-size: 0.8rem; color: var(--rojo-calor); min-height: 1em; }
+.mod-zona-guardar { align-self: flex-start; padding: 0.55rem 1.2rem; }

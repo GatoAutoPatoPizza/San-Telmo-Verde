@@ -179,6 +179,19 @@ function asegurarTablaZonas() {
         orden INT NOT NULL DEFAULT 0,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+      // Columnas y tabla de "me gusta" (se agregan solas si faltan)
+      const colLikes = await dbQuery("SHOW COLUMNS FROM zonas_mapa LIKE 'likes'");
+      if (!colLikes.length) await dbQuery('ALTER TABLE zonas_mapa ADD COLUMN likes INT NOT NULL DEFAULT 0');
+      const colCreador = await dbQuery("SHOW COLUMNS FROM zonas_mapa LIKE 'creado_por'");
+      if (!colCreador.length) await dbQuery('ALTER TABLE zonas_mapa ADD COLUMN creado_por INT DEFAULT NULL');
+      await dbQuery(`CREATE TABLE IF NOT EXISTS likes_zona (
+        id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        zona_id VARCHAR(50) NOT NULL,
+        usuario_id INT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY like_unico (zona_id, usuario_id),
+        KEY usuario_id (usuario_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
       const [{ n }] = await dbQuery('SELECT COUNT(*) AS n FROM zonas_mapa');
       if (Number(n) === 0) {
         for (let i = 0; i < ZONAS_INICIALES.length; i += 1) {
@@ -201,8 +214,50 @@ asegurarTablaZonas().catch((e) => console.warn('Zonas: no se pudo preparar la ta
 app.get('/api/zonas', async (req, res) => {
   try {
     await asegurarTablaZonas();
-    const rows = await dbQuery('SELECT id, tipo, titulo, resumen, detalle, latitud, longitud, simbolo FROM zonas_mapa WHERE activo = 1 ORDER BY orden, created_at');
+    const rows = await dbQuery('SELECT id, tipo, titulo, resumen, detalle, latitud, longitud, simbolo, likes FROM zonas_mapa WHERE activo = 1 ORDER BY orden, created_at');
     res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Dar / sacar "me gusta" a una zona (toggle). Un like por usuario y zona.
+app.post('/api/zonas/:id/like', async (req, res) => {
+  const zonaId = req.params.id;
+  try {
+    await asegurarTablaZonas();
+    const uid = await resolverUsuarioId(req.body);
+    if (!uid) return res.status(401).json({ error: 'Ingresá con tu cuenta para dar me gusta' });
+    const zona = await dbQuery('SELECT id FROM zonas_mapa WHERE id = ? AND activo = 1', [zonaId]);
+    if (!zona.length) return res.status(404).json({ error: 'La zona no existe' });
+
+    const existe = await dbQuery('SELECT id FROM likes_zona WHERE zona_id = ? AND usuario_id = ?', [zonaId, uid]);
+    let meGusta;
+    if (existe.length) {
+      await dbQuery('DELETE FROM likes_zona WHERE id = ?', [existe[0].id]);
+      meGusta = false;
+    } else {
+      await dbQuery('INSERT INTO likes_zona (zona_id, usuario_id) VALUES (?, ?)', [zonaId, uid]);
+      meGusta = true;
+    }
+    // Se recalcula desde likes_zona para que el contador nunca se desfase
+    await dbQuery('UPDATE zonas_mapa SET likes = (SELECT COUNT(*) FROM likes_zona WHERE zona_id = ?) WHERE id = ?', [zonaId, zonaId]);
+    const rows = await dbQuery('SELECT likes FROM zonas_mapa WHERE id = ?', [zonaId]);
+    res.json({ likes: rows[0] ? Number(rows[0].likes) : 0, meGusta });
+  } catch (e) {
+    if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Ya diste me gusta' });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Qué zonas le gustaron al usuario (para pintar el corazón lleno al cargar)
+app.get('/api/zonas/mis-likes', async (req, res) => {
+  try {
+    await asegurarTablaZonas();
+    const uid = await resolverUsuarioId(req.query);
+    if (!uid) return res.json([]);
+    const rows = await dbQuery('SELECT zona_id FROM likes_zona WHERE usuario_id = ?', [uid]);
+    res.json(rows.map((r) => r.zona_id));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -545,6 +600,49 @@ function esModeradorEmail(email) {
   if (!email) return false;
   return MODERADORES.includes(String(email).toLowerCase().trim());
 }
+
+// ——— Zonas del mapa: alta y baja por moderador ———
+app.post('/api/mod/zonas', async (req, res) => {
+  const { email, titulo, resumen, detalle, tipo, latitud, longitud } = req.body || {};
+  if (!esModeradorEmail(email)) return res.status(403).json({ error: 'No autorizado' });
+  if (!titulo || !String(titulo).trim()) return res.status(400).json({ error: 'Falta el nombre de la zona' });
+  if (tipo !== 'verde' && tipo !== 'calor') return res.status(400).json({ error: 'Tipo inválido' });
+  const lat = Number(latitud);
+  const lng = Number(longitud);
+  if (latitud == null || longitud == null || latitud === '' || longitud === '' || !Number.isFinite(lat) || !Number.isFinite(lng)
+      || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    return res.status(400).json({ error: 'Falta marcar la ubicación en el mapa' });
+  }
+  try {
+    await asegurarTablaZonas();
+    const uid = await resolverUsuarioId(req.body);
+    const id = `${tipo}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+    const [{ maxOrden }] = await dbQuery('SELECT COALESCE(MAX(orden), -1) AS maxOrden FROM zonas_mapa');
+    await dbQuery(
+      `INSERT INTO zonas_mapa (id, tipo, titulo, resumen, detalle, latitud, longitud, simbolo, orden, creado_por)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [id, tipo, String(titulo).trim().slice(0, 255), String(resumen || '').trim().slice(0, 255),
+        String(detalle || '').trim(), lat, lng, '', Number(maxOrden) + 1, uid]
+    );
+    const rows = await dbQuery('SELECT id, tipo, titulo, resumen, detalle, latitud, longitud, simbolo, likes FROM zonas_mapa WHERE id = ?', [id]);
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/mod/zonas/:id', async (req, res) => {
+  const email = (req.body && req.body.email) || req.query.email || req.headers['x-mod-email'];
+  if (!esModeradorEmail(email)) return res.status(403).json({ error: 'No autorizado' });
+  try {
+    await asegurarTablaZonas();
+    await dbQuery('DELETE FROM likes_zona WHERE zona_id = ?', [req.params.id]);
+    await dbQuery('DELETE FROM zonas_mapa WHERE id = ?', [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 app.get('/api/mod/denuncias', async (req, res) => {
   const email = req.query.email || req.headers['x-mod-email'];
