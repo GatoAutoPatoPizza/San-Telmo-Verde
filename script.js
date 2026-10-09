@@ -3,6 +3,8 @@
    Estado centralizado + votación unificada
 ============================================ */
 
+const CENTRO_SAN_TELMO = [-34.6212, -58.3714];
+
 /* Límites aproximados del barrio de San Telmo ([lat, lng], en orden alrededor del perímetro).
    Se usan para: 1) resaltar la zona en el mapa, 2) no dejar que el mapa se aleje del barrio,
    3) rechazar propuestas marcadas fuera del barrio. Ajustá los puntos si querés más precisión. */
