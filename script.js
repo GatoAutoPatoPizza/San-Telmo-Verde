@@ -3,7 +3,30 @@
    Estado centralizado + votación unificada
 ============================================ */
 
-const CENTRO_SAN_TELMO = [-34.6212, -58.3714];
+/* Límites aproximados del barrio de San Telmo ([lat, lng], en orden alrededor del perímetro).
+   Se usan para: 1) resaltar la zona en el mapa, 2) no dejar que el mapa se aleje del barrio,
+   3) rechazar propuestas marcadas fuera del barrio. Ajustá los puntos si querés más precisión. */
+const POLIGONO_SAN_TELMO = [
+  [-34.6150, -58.3800],
+  [-34.6150, -58.3665],
+  [-34.6235, -58.3650],
+  [-34.6322, -58.3665],
+  [-34.6322, -58.3745],
+  [-34.6240, -58.3805],
+];
+
+// Ray-casting: ¿el punto está dentro del polígono?
+function esCoordenadaEnSanTelmo(lat, lng) {
+  let dentro = false;
+  for (let i = 0, j = POLIGONO_SAN_TELMO.length - 1; i < POLIGONO_SAN_TELMO.length; j = i++) {
+    const [xi, yi] = POLIGONO_SAN_TELMO[i];
+    const [xj, yj] = POLIGONO_SAN_TELMO[j];
+    const cruza = ((yi > lng) !== (yj > lng)) &&
+      (lat < ((xj - xi) * (lng - yi)) / (yj - yi) + xi);
+    if (cruza) dentro = !dentro;
+  }
+  return dentro;
+}
 
 /* Fichas fijas del mapa (espacios verdes existentes e islas de calor).
    Centralizadas acá (con id) para poder: 1) dibujar el marcador,
@@ -1434,10 +1457,27 @@ function syncMarcadoresDesdeStore() {
 }
 
 function inicializarMapa() {
-  Store.mapa = L.map('map').setView(CENTRO_SAN_TELMO, 15);
+  // El mapa queda encerrado en San Telmo (con un margen para poder mover un poco)
+  const limites = L.latLngBounds(POLIGONO_SAN_TELMO).pad(0.15);
+  Store.mapa = L.map('map', {
+    maxBounds: limites,
+    maxBoundsViscosity: 1.0, // no se puede arrastrar fuera de los límites
+    minZoom: 14,             // no se puede alejar demasiado
+  }).setView(CENTRO_SAN_TELMO, 15);
   L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png?api_key=c016fa8b-688d-42ab-bde9-1159cfe1a15d', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     maxZoom: 19,
+  }).addTo(Store.mapa);
+
+  // Zona de San Telmo coloreada (interactive:false → no tapa los clics del mapa)
+  L.polygon(POLIGONO_SAN_TELMO, {
+    color: '#2e7d32',
+    weight: 3,
+    opacity: 0.9,
+    dashArray: '6 6',
+    fillColor: '#81c784',
+    fillOpacity: 0.22,
+    interactive: false,
   }).addTo(Store.mapa);
 
   Store.capas.verde = L.layerGroup().addTo(Store.mapa);
@@ -1470,7 +1510,11 @@ function syncMarcadoresZonasDesdeStore() {
 
 function onMapClick(e) {
   if (!Store.modoUbicacion || !Store.mapa) return;
-  const { lat, lng } = e.latlng;
+    const { lat, lng } = e.latlng;
+  if (!esCoordenadaEnSanTelmo(lat, lng)) {
+    alert('⚠️ Elegí un punto dentro de la zona resaltada: solo se puede marcar dentro del barrio de San Telmo.');
+    return; // sigue en modo "elegir ubicación" para que pruebe otra vez
+  }
   const destino = Store.modoUbicacionDestino || 'propuesta';
   clearMarcadorTemporal();
   Store.marcadorTemporal = L.marker([lat, lng], { icon: crearIcono('prop', '★') }).addTo(Store.mapa);
